@@ -12,6 +12,7 @@ import pages.account_creation
 import pages.scoreboard
 import pages.stats
 import pages.home 
+import pages.game
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
     html.Div(id='page-content')
@@ -27,6 +28,10 @@ def display_page(pathname):
         return pages.stats.main_stats
     elif pathname == '/page_newplayer':
         return pages.account_creation.main_acc
+    elif pathname == '/page_home':
+        return pages.home.main_home
+    elif pathname == '/page_game':
+        return pages.game.main_game
     else:
         return pages.home.main_home
 

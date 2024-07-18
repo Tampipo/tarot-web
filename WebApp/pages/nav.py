@@ -4,7 +4,10 @@ PLOTLY_LOGO = "https://images.plot.ly/logo/new-branding/plotly-logomark.png"
 
 
 collapse = dbc.Row(
-    [
+    [   dbc.Col(
+            dbc.Button("New game", color="primary", href = "/page_game", className="ml-2", id = "home"),
+            width="auto",
+        ),
         dbc.Col(
             dbc.Button("Scoreboard", color="primary", href = "/page_scoreboard",className="ml-2", id = "score"),
             width="auto",
@@ -20,7 +23,8 @@ collapse = dbc.Row(
         dbc.Col(
             dbc.Button("Home", color="primary", href = "/page_home", className="ml-2", id = "home"),
             width="auto",
-        )
+        ),
+
     ],
     className="ml-auto flex-nowrap mt-3 mt-md-0",
     align="center",
