@@ -1,9 +1,9 @@
 from __init__ import *
-
+from app import app
 PLOTLY_LOGO = "https://images.plot.ly/logo/new-branding/plotly-logomark.png"
 
 
-collapse = dbc.Row(
+collapse =dbc.Row(
     [   dbc.Col(
             dbc.Button("New game", color="primary", href = "/page_game", className="ml-2", id = "home"),
             width="auto",
@@ -28,9 +28,21 @@ collapse = dbc.Row(
     ],
     className="ml-auto flex-nowrap mt-3 mt-md-0",
     align="center",
-
+     style={'flex-wrap': 'wrap'}
 )
 
+dropdown = dbc.DropdownMenu(
+    children=[
+        dbc.DropdownMenuItem("New Game", href="/page_game"),
+        dbc.DropdownMenuItem("Scoreboard", href="/page_scoreboard"),
+        dbc.DropdownMenuItem("Statistics", href="/page_statistics"),
+        dbc.DropdownMenuItem("New Player", href="/page_newplayer"),
+        dbc.DropdownMenuItem("Home", href="/page_home"),
+    ],
+    nav=True,
+    in_navbar=True,
+    label="Menu",  # This is the text that will be displayed for the dropdown
+)
 navbar = dbc.Navbar(
     [
         html.A(
@@ -44,11 +56,22 @@ navbar = dbc.Navbar(
                 ],
                 align="center",
             ),
-            href="/page_home", #mettre la ref de beeeasy
+            href="/page_home", 
         ),
         dbc.NavbarToggler(id="navbar-toggler"),
         dbc.Collapse(collapse, id="navbar-collapse", navbar=True),
+
     ],
     color="primary",
     dark=True,
 )
+
+@app.callback(
+    Output("navbar-collapse", "is_open"),
+    [Input("navbar-toggler", "n_clicks")],
+    [State("navbar-collapse", "is_open")],
+)
+def toggle_collapse(n, is_open):
+    if n:
+        return not is_open
+    return is_open

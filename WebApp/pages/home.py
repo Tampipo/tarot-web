@@ -14,7 +14,7 @@ main_home = html.Div(
 
         dbc.Card(
             [
-                dbc.CardHeader(html.H2("Welcome to Our Tarto WebApp", className="text-center")),
+                dbc.CardHeader(html.H2("Welcome to Our Tarot WebApp", className="text-center")),
                 dbc.CardBody([
                     html.P(
                         "This app is designed to keep count of scores in Tarot games.",
