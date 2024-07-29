@@ -95,7 +95,7 @@ def create_account(n_clicks, name, surname, email):
             #check that account does not already exist
             #open player file in database
             with open(os.path.join(database_path, 'players.csv')) as f:
-                df = pd.read_csv(f)
+                df = pd.read_csv(f, dtype={'ID': int})
                 #check if name surname combination exists
                 player_exists = ((df['Name'] == name) & (df['Surname'] == surname)).any()
     
@@ -105,7 +105,7 @@ def create_account(n_clicks, name, surname, email):
             else:
                 # Player does not exist, proceed with account creation
                 # Append new player data to the DataFrame
-                new_player = pd.DataFrame({'Name': [name], 'Surname': [surname], 'Email': [email]})
+                new_player = pd.DataFrame({'Name': [name], 'Surname': [surname], 'Email': [email], 'ID': [df['ID'].max() + 1]})
                 df = pd.concat([df, new_player], ignore_index=True)
                 
                 # Save the updated DataFrame back to CSV

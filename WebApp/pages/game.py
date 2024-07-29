@@ -10,10 +10,12 @@ contract_names = ['Small', 'Guard', 'Guard without', 'Guard against']
 # Create options for dbc.Select
 player_options = [{'label': name, 'value': name} for name in player_names]
 contract_options = [{'label': name, 'value': name} for name in contract_names]
+initial_colors = {'btn-petit_au_bout': 'secondary', 'btn-misery': 'secondary'}
+
 main_game = html.Div(
     [
         navbar,  # add the navbar from nav.py
-
+        dcc.Store(id='store-number-of-players'),
         html.Br(),  # Vertical space
         html.Br(),
 
@@ -36,9 +38,23 @@ main_game = html.Div(
                     dbc.Row([
                         dbc.Col([html.H5("Taker:", className="card-title", style={"text-align": "center"}),
                         dbc.Row([
-                            dbc.Col(dbc.Select(id='taker', options=[], placeholder="Select Contract"), width=2),
+                            dbc.Col(dbc.Select(id='taker', options=[], placeholder="Select Player"), width=2),
                         ], justify="center"),
                         ]),
+                        dbc.Col(
+                            [
+                               dbc.Checklist(
+                                    options=[{"label": "Player called himself", "value": 1}],
+                                    value=[],
+                                    id='player-called-self',
+                                    inline=True,
+                                    switch=True,
+                                ),
+                                html.H5("Teammate:", className="card-title"),
+                                dbc.Col(dbc.Select(id='teammate', options=[], placeholder="Select Player"), width=2),    
+                            ],
+                            width={"size": 4, "offset": 0},
+                        ),
                         dbc.Col([html.H5("Contract:", className="card-title", style={"text-align": "center"}),
                         dbc.Row([
                             dbc.Col(dbc.Select(id='contract', options=contract_options, placeholder="Select Contract"), width=2),
@@ -65,21 +81,12 @@ main_game = html.Div(
                         dbc.Col([
                             html.H5("Additional Options:", className="card-title", style={"text-align": "center"}),
                             dbc.Row(
-                                    dbc.Col(
-                                        dbc.Checklist(
-                                            options=[
-                                                {"label": "Petit au bout", "value": "petit_au_bout"},
-                                                {"label": "Misery", "value": "misery"},
-                                                {"label": "Poignée", "value": "poignee"},
-                                                {"label": "Double Poignée", "value": "2poignee"},
-                                                {"label": "Triple Poignée", "value": "3poignee"},
-                                            ],
-                                            value=[],
-                                            id="additional-options",
-                                            inline=True,
-                                        ),
-                                        width={"size": 6, "offset": 1},  # Adjust the size and offset to center the checklist
-                                    ),
+                                    [dbc.Button("Petit au Bout", id="btn-petit_au_bout", color=initial_colors['btn-petit_au_bout'], className="me-1"),
+                                    dbc.Button("Misery", id="btn-misery", color=initial_colors['btn-misery'], className="me-1"),
+                                    dbc.Button("Poignee", id="btn-poignee", color="secondary", className="me-1"),
+                                    dbc.Button("2 Poignee", id="btn-2poignee", color="secondary", className="me-1"),
+                                    dbc.Button("3 Poignee", id="btn-3poignee", color="secondary", className="me-1"),
+                                    ],
                                     justify="center",
                             ),
                         ]),
@@ -90,6 +97,7 @@ main_game = html.Div(
                                     dbc.Input(
                                         type="number",
                                         id="number-of-points",
+                                        max=91, min=0, step=1,
                                         placeholder="Enter number of points",
                                     ),
                                 width={"size": 7},  # Adjust width and offset to center the input field
@@ -116,6 +124,9 @@ main_game = html.Div(
     
 )   
 
+###########Various callbacks for the game page################
+
+
 @app.callback(
     Output('taker', 'options'),
     [Input('player-select-1', 'value'),
@@ -125,64 +136,206 @@ main_game = html.Div(
      Input('player-select-5', 'value')]
 )
 def update_taker_options(*selected_players):
+    """"
+    Update the possible players for the taker dropdown based on the selected players
+    """
     selected_players = [player for player in selected_players if player is not None]
     taker_options = [{'label': option['label'], 'value': option['value']} for option in player_options if option['value'] in selected_players]
     return taker_options
 
-#compute the number of points made
+@app.callback(
+    Output('teammate', 'options'),
+    [Input('player-called-self', 'value'),
+     Input('player-select-1', 'value'),
+     Input('player-select-2', 'value'),
+     Input('player-select-3', 'value'),
+     Input('player-select-4', 'value'),
+     Input('player-select-5', 'value')]
+)
+def update_teammate_options(self_called, *selected_players):
+    """"
+    Update the possible players for the taker dropdown based on the selected players
+    """
+    selected_players = [player for player in selected_players if player is not None]
+    if self_called:
+        return None
+    taker_options = [{'label': option['label'], 'value': option['value']} for option in player_options if option['value'] in selected_players]
+    return taker_options
+
+@app.callback(
+    Output('store-number-of-players', 'data'),  # Update to store data
+    [Input('player-select-1', 'value'),
+     Input('player-select-2', 'value'),
+     Input('player-select-3', 'value'),
+     Input('player-select-4', 'value'),
+     Input('player-select-5', 'value')]
+)
+def update_number_of_players(player1, player2, player3, player4, player5):
+    """
+    Update the number of selected players
+    """
+    selected_players = len([player for player in [player1, player2, player3, player4, player5] if player])
+    return {'num_players': selected_players}
+
+@app.callback(
+    [Output('btn-petit_au_bout', 'color'), Output('btn-misery', 'color'), Output('btn-poignee', 'color'), Output('btn-2poignee', 'color'), Output('btn-3poignee', 'color')],
+    [Input('btn-petit_au_bout', 'n_clicks'), Input('btn-misery', 'n_clicks'), Input('btn-poignee', 'n_clicks'), Input('btn-2poignee', 'n_clicks'), Input('btn-3poignee', 'n_clicks')],
+    [State('btn-petit_au_bout', 'color'), State('btn-misery', 'color'), State('btn-poignee', 'color'), State('btn-2poignee', 'color'), State('btn-3poignee', 'color')]
+)
+def update_button_colors(btn_petit_clicks, btn_misery_clicks, btn_poignee_clicks, btn_2poignee_clicks, btn_3poignee_clicks, petit_color, misery_color, poignee_color, poignee2_color, poignee3_color):
+    """
+    Update the color of the different buttons to determined if the different
+    options are for the attacking or defending team
+    """
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return ['secondary', 'secondary', 'secondary', 'secondary', 'secondary']
+    else:
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        if button_id == 'btn-petit_au_bout':
+            current_color = petit_color
+        elif button_id == 'btn-misery':
+            current_color = misery_color
+        elif button_id == 'btn-poignee':
+            current_color = poignee_color
+        elif button_id == 'btn-2poignee':
+            current_color = poignee2_color
+        elif button_id == 'btn-3poignee':
+            current_color = poignee3_color
+        
+        # Cycle through the colors: secondary -> danger -> success -> secondary
+        if current_color == 'secondary':
+            new_color = 'danger'
+        elif current_color == 'danger':
+            new_color = 'success'
+        else:
+            new_color = 'secondary'
+        if button_id == 'btn-petit_au_bout':
+            return [new_color, dash.no_update, dash.no_update, dash.no_update, dash.no_update]
+        elif button_id == 'btn-misery':
+            return [dash.no_update, new_color, dash.no_update, dash.no_update, dash.no_update]
+        elif button_id == 'btn-poignee':
+            return [dash.no_update, dash.no_update, new_color, dash.no_update, dash.no_update]
+        elif button_id == 'btn-2poignee':
+            return [dash.no_update, dash.no_update, dash.no_update, new_color, dash.no_update]
+        elif button_id == 'btn-3poignee':
+            return [dash.no_update, dash.no_update, dash.no_update, dash.no_update, new_color]
+        # Update the button color
+    
+##########################################################
+# Main Code to compute points for the different playters #
+##########################################################
+
 @app.callback(
     Output('page-game-content', 'children'),
     [Input('contract', 'value'),
      Input('number-of-oudlers', 'value'),
-     Input('additional-options', 'value'),
      Input('number-of-points', 'value'),
-     Input('save-game-button', 'n_clicks')]
+     Input('save-game-button', 'n_clicks'),
+     Input('store-number-of-players', 'data'),
+     Input('player-called-self', 'value'),
+     Input('player-select-1', 'value'),
+     Input('player-select-2', 'value'),
+     Input('player-select-3', 'value'),
+     Input('player-select-4', 'value'),
+     Input('player-select-5', 'value'),
+     Input('taker', 'value'),
+     Input('teammate', 'value'),],
+     [State('btn-petit_au_bout', 'color'),
+     State('btn-misery', 'color'),
+     State('btn-poignee', 'color'),
+     State('btn-2poignee', 'color'),
+     State('btn-3poignee', 'color')]
 )
-def compute_points(contract, oudlers, additional_options, num, n_clicks):
+def compute_points(contract, oudlers, num, n_clicks, num_players_data, self_called, player_1, player_2, player_3, player_4, player_5, taker, teammate, petit_color, misery_color, poignee_color, poignee2_color, poignee3_color):
+    #check if month exists in database
+    date = str(get_month()) + '_' + str(get_year())
+    if not os.path.exists(os.path.join(database_path, f'scores_{date}.csv')):
+        #create scores database
+        with open(os.path.join(database_path, f'scores_{date}.csv'), 'w') as f:
+            f.write('ID,Ngames,Score,Mean,Std,Taker,BiggestWin,Biggestloss\n')
     if n_clicks is not None:
-        if contract is None or oudlers is None or num is None:
+        if contract is None or oudlers is None or num is None or taker is None:
             alert = dbc.Alert("Please fill in all the fields", color="danger", style={"maxWidth": "500px"})
         else: 
-            points = num
-            coeff = 1
-            point_to_make = 56
-            # Add points for oudlers
-            if oudlers == 0:
-                point_to_make = 56
-            elif oudlers == 1:
-                point_to_make = 51
-            elif oudlers == 2:
-                point_to_make = 41
-            elif oudlers == 3:
-                point_to_make = 36
-            # Compute the number of points made
-            points = (points - point_to_make)*coeff
-            # Compute the number of points based on the contract
-            if contract == 'Small':
-                coeff = 1
-            elif contract == 'Guard':
-                coeff = 2 
-            elif contract == 'Guard without':
-                coeff = 4
-            elif contract == 'Guard against':
-                coeff = 6
-            points = (points - point_to_make)*coeff
-            # Add points for additional options
-            if 'petit_au_bout' in additional_options:
-                points += 10
-            if 'misery' in additional_options:
-                points += 10
-            if 'poignee' in additional_options:
-                points += 10
-            if '2poignee' in additional_options:
-                points += 20
-            if '3poignee' in additional_options:
-                points += 30
-            if points < 0:
-                points = -points
-                alert = dbc.Alert(f"Team has lost {points} points", color="danger", style={"maxWidth": "500px"})
+            num_players = num_players_data.get('num_players', 0) if num_players_data else 0
+            players = [player_1, player_2, player_3, player_4, player_5]
+            if num_players < 3:
+                alert = dbc.Alert("Please select at least 3 players", color="danger", style={"maxWidth": "500px"})
             else:
-                alert = dbc.Alert(f"Team has won {points} points", color="success", style={"maxWidth": "500px"})
+                points = num
+                coeff = 1
+                point_to_make = 56
+                # Add points for oudlers
+                if oudlers == 0:
+                    point_to_make = 56
+                elif oudlers == 1:
+                    point_to_make = 51
+                elif oudlers == 2:
+                    point_to_make = 41
+                elif oudlers == 3:
+                    point_to_make = 36
+                # Compute the number of points made
+                points = (points - point_to_make)
+                if petit_color != 'secondary':
+                    if petit_color == 'danger':
+                        points = points - 10
+                    else:
+                        points = points + 10
+                if misery_color != 'secondary':
+                    if misery_color == 'danger':
+                        points = points - 10
+                    else:
+                        points = points + 10
+                # Compute the number of points based on the contract
+                if contract == 'Small':
+                    coeff = 1
+                elif contract == 'Guard':
+                    coeff = 2 
+                elif contract == 'Guard without':
+                    coeff = 4
+                elif contract == 'Guard against':
+                    coeff = 6
+                points = (points - point_to_make)*coeff
+                # Add points for additional options
+                if poignee_color != 'secondary':
+                    if poignee_color == 'danger':
+                        points = points - 20
+                    else:
+                        points = points + 20
+                if poignee2_color != 'secondary':
+                    if poignee2_color == 'danger':
+                        points = points - 30
+                    else:
+                        points = points + 30
+                if poignee3_color != 'secondary':
+                    if poignee3_color == 'danger':
+                        points = points - 40
+                    else:
+                        points = points + 40
+                if points < 0:
+                    points = -points
+                    alert = dbc.Alert(f"Team has lost {points} points", color="danger", style={"maxWidth": "500px"})
+                else:
+                    alert = dbc.Alert(f"Team has won {points} points", color="success", style={"maxWidth": "500px"})
+                #compute scores for each player
+                score = 0
+                for player in players:
+                    if player is not None:
+                        if num_players == 5 :
+                            if self_called:
+                                if player == taker:
+                                    score = points * 4
+                                else :
+                                    score = -points
+                            else: 
+                                if player == taker:
+                                    score = points * 3
+                                elif player == teammate:
+                                    score = points
+                                else:
+                                    score = -points
+                        write_score_to_database
         return dbc.Row(
             dbc.Col(
                 alert,
@@ -192,3 +345,4 @@ def compute_points(contract, oudlers, additional_options, num, n_clicks):
         )
     else :
         return None
+

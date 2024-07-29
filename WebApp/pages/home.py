@@ -32,7 +32,7 @@ main_home = html.Div(
                         html.Li("Otherwise, juste go ahead and start a new game!"),
                     ]),
                     html.P(
-                        "Please contact me at tanguy(dot)marsault(at)gmail(dot)com for any questions or suggestions.",
+                        "Please contact me at tanguy(dot)marsault02(at)gmail(dot)com for any questions or suggestions.",
                         className="card-text",
                     ),
                 ]),
