@@ -42,13 +42,11 @@ main_game = html.Div(
                         ]),
                         dbc.Col(
                             [
-                               dbc.Checklist(
-                                    options=[{"label": "Player called himself", "value": 1}],
-                                    value=True,
+                               dcc.Checklist(
+                                    options=[{"label": "Player called himself", "value": 'CALL_SELF'}],
                                     id='player-called-self',
-                                    inline=True,
-                                    switch=True,
                                 ),
+                                dcc.Store(id='player-called-self-store', storage_type='session'),
                                 html.H5("Teammate:", className="card-title"),
                                 dbc.Col(dbc.Select(id='teammate', options=[], placeholder="Select Player"), width=2),    
                             ],
@@ -143,8 +141,7 @@ def update_taker_options(*selected_players):
     return taker_options
 
 @app.callback(
-    [Output('teammate', 'options'),
-    Output('player-called-self', 'value')],
+    Output('teammate', 'options'),
     [Input('player-called-self', 'value'),
      Input('player-select-1', 'value'),
      Input('player-select-2', 'value'),
@@ -159,9 +156,9 @@ def update_teammate_options(self_called, *selected_players):
     selected_players = [player for player in selected_players if player is not None]
     print(self_called)
     if self_called:
-        return [], self_called
+        return None
     taker_options = [{'label': option['label'], 'value': option['value']} for option in player_options if option['value'] in selected_players]
-    return taker_options, not self_called
+    return taker_options
 
 @app.callback(
     Output('store-number-of-players', 'data'),  # Update to store data
@@ -177,6 +174,14 @@ def update_number_of_players(player1, player2, player3, player4, player5):
     """
     selected_players = len([player for player in [player1, player2, player3, player4, player5] if player])
     return {'num_players': selected_players}
+# @app.callback(
+#     Output('player-called-self-store', 'data'),  # Update the store's data
+#     [Input('player_called_self', 'value')]  # Triggered by changes in the checklist's value
+# )
+# def update_player_called_self(selected_values):
+#     print(player_called_self)
+#     player_called_self = 'CALL_SELF' in selected_values  # True if 'CALL_SELF' is selected, False otherwise
+#     return {'player_called_self': player_called_self}  # Store the boolean in a dictionary
 
 @app.callback(
     [Output('btn-petit_au_bout', 'color'), Output('btn-misery', 'color'), Output('btn-poignee', 'color'), Output('btn-2poignee', 'color'), Output('btn-3poignee', 'color')],
@@ -261,7 +266,7 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, self_call
         else: 
             num_players = num_players_data.get('num_players', 0) if num_players_data else 0
             players = [player_1, player_2, player_3, player_4, player_5]
-            print(players)
+            # print(players)
             bonuses=[]
             if num_players < 3:
                 alert = dbc.Alert("Please select at least 3 players", color="danger", style={"maxWidth": "500px"})
