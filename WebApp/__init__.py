@@ -27,8 +27,15 @@ database_path = 'database/'
 
 if not os.path.exists(database_path):
     os.makedirs(database_path)
+    with open(os.path.join(database_path, 'players.csv'), 'w') as f:
+        f.write('ID,Name,Surname,Email\n')
+    with open(os.path.join(database_path, 'games.csv'), 'w') as f:
+        f.write('Date,NumPlayers,PlayersId,TakersId,Contract,SelfCalled,TeammateId,NumOudlers,Bonuses,PointsMade,NominalScore\n')
+    with open(os.path.join(database_path, 'scores.csv'), 'w') as f:
+        f.write('ID,Ngames,Score,Mean,Std,Taker,BiggestWin,Biggestloss\n')
 else: 
     if not os.path.exists(os.path.join(database_path, 'players.csv')):
+        print('OK')
         #create players database
         with open(os.path.join(database_path, 'players.csv'), 'w') as f:
             f.write('ID,Name,Surname,Email\n')
@@ -39,11 +46,7 @@ else:
     if not os.path.exists(os.path.join(database_path, 'scores.csv')):
         #create games database
         with open(os.path.join(database_path, 'scores.csv'), 'w') as f:
-            f.write('ID,Ngames,Score,Mean,Std,Taker,,BiggestWin,Biggestloss\n')
-    if not os.path.exists(os.path.join(database_path, 'scores.csv')):
-        #create games database
-        with open(os.path.join(database_path, 'scores.csv'), 'w') as f:
-            f.write('ID,Ngames,Score,Mean,Std,Taker,,BiggestWin,Biggestloss\n')
+            f.write('ID,Ngames,Score,Mean,Std,Taker,BiggestWin,Biggestloss\n')
     
 #players_names
 

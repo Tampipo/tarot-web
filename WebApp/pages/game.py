@@ -46,7 +46,7 @@ main_game = html.Div(
                                     options=[{"label": "Player called himself", "value": 'CALL_SELF'}],
                                     id='player-called-self',
                                 ),
-                                dcc.Store(id='player-called-self-store', storage_type='session'),
+                                dcc.Store(id='player-called-self-store', storage_type='session',data={'player_called_self': False}),
                                 html.H5("Teammate:", className="card-title"),
                                 dbc.Col(dbc.Select(id='teammate', options=[], placeholder="Select Player"), width=2),    
                             ],
@@ -142,7 +142,7 @@ def update_taker_options(*selected_players):
 
 @app.callback(
     Output('teammate', 'options'),
-    [Input('player-called-self', 'value'),
+    [Input('player-called-self-store','data'),
      Input('player-select-1', 'value'),
      Input('player-select-2', 'value'),
      Input('player-select-3', 'value'),
@@ -154,8 +154,7 @@ def update_teammate_options(self_called, *selected_players):
     Update the possible players for the taker dropdown based on the selected players
     """
     selected_players = [player for player in selected_players if player is not None]
-    print(self_called)
-    if self_called:
+    if self_called.get('player_called_self', False):
         return None
     taker_options = [{'label': option['label'], 'value': option['value']} for option in player_options if option['value'] in selected_players]
     return taker_options
@@ -166,7 +165,8 @@ def update_teammate_options(self_called, *selected_players):
      Input('player-select-2', 'value'),
      Input('player-select-3', 'value'),
      Input('player-select-4', 'value'),
-     Input('player-select-5', 'value')]
+     Input('player-select-5', 'value'),
+    ]
 )
 def update_number_of_players(player1, player2, player3, player4, player5):
     """
@@ -174,14 +174,15 @@ def update_number_of_players(player1, player2, player3, player4, player5):
     """
     selected_players = len([player for player in [player1, player2, player3, player4, player5] if player])
     return {'num_players': selected_players}
-# @app.callback(
-#     Output('player-called-self-store', 'data'),  # Update the store's data
-#     [Input('player_called_self', 'value')]  # Triggered by changes in the checklist's value
-# )
-# def update_player_called_self(selected_values):
-#     print(player_called_self)
-#     player_called_self = 'CALL_SELF' in selected_values  # True if 'CALL_SELF' is selected, False otherwise
-#     return {'player_called_self': player_called_self}  # Store the boolean in a dictionary
+@app.callback(
+    Output('player-called-self-store', 'data'),  # Update the store's data
+    [Input('player-called-self', 'value')]  # Triggered by changes in the checklist's value
+)
+def update_player_called_self(selected_values):
+    if selected_values is None:
+        selected_values = []  # Set to an empty list if None
+    player_called_self = 'CALL_SELF' in selected_values  # True if 'CALL_SELF' is selected, False otherwise
+    return {'player_called_self': player_called_self}  # Store the boolean in a dictionary
 
 @app.callback(
     [Output('btn-petit_au_bout', 'color'), Output('btn-misery', 'color'), Output('btn-poignee', 'color'), Output('btn-2poignee', 'color'), Output('btn-3poignee', 'color')],
@@ -239,7 +240,7 @@ def update_button_colors(btn_petit_clicks, btn_misery_clicks, btn_poignee_clicks
      Input('number-of-points', 'value'),
      Input('save-game-button', 'n_clicks'),
      Input('store-number-of-players', 'data'),
-     Input('player-called-self', 'value'),
+     Input('player-called-self-store', 'data'),
      Input('player-select-1', 'value'),
      Input('player-select-2', 'value'),
      Input('player-select-3', 'value'),
@@ -253,7 +254,7 @@ def update_button_colors(btn_petit_clicks, btn_misery_clicks, btn_poignee_clicks
      State('btn-2poignee', 'color'),
      State('btn-3poignee', 'color')]
 )
-def compute_points(contract, oudlers, num, n_clicks, num_players_data, self_called, player_1, player_2, player_3, player_4, player_5, taker, teammate, petit_color, misery_color, poignee_color, poignee2_color, poignee3_color):
+def compute_points(contract, oudlers, num, n_clicks, num_players_data, player_called_self, player_1, player_2, player_3, player_4, player_5, taker, teammate, petit_color, misery_color, poignee_color, poignee2_color, poignee3_color):
     #check if month exists in database
     date = str(get_month()) + '_' + str(get_year())
     if not os.path.exists(os.path.join(database_path, f'scores_{date}.csv')):
@@ -265,8 +266,8 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, self_call
             alert = dbc.Alert("Please fill in all the fields", color="danger", style={"maxWidth": "500px"})
         else: 
             num_players = num_players_data.get('num_players', 0) if num_players_data else 0
+            self_called = player_called_self.get('player_called_self', False) if player_called_self else False
             players = [player_1, player_2, player_3, player_4, player_5]
-            # print(players)
             bonuses=[]
             if num_players < 3:
                 alert = dbc.Alert("Please select at least 3 players", color="danger", style={"maxWidth": "500px"})
@@ -346,12 +347,11 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, self_call
                     alert = dbc.Alert(f"Team has lost {lost_points} points", color="danger", style={"maxWidth": "500px"})
                 else:
                     alert = dbc.Alert(f"Team has won {points} points", color="success", style={"maxWidth": "500px"})
-                
-                player_called_himself = not self_called
+                print(self_called)
                 players_id = [get_player_id(player.split(' ')[1], player.split(' ')[0]) for player in players]
                 taker_id = get_player_id(taker.split(' ')[1], taker.split(' ')[0])
-                teammate_id = get_player_id(teammate.split(' ')[1], teammate.split(' ')[0]) if not player_called_himself else None
-                write_game_to_database(num_players, players_id, taker_id, contract, player_called_himself, teammate_id, oudlers, bonuses, points, point_to_make)
+                teammate_id = get_player_id(teammate.split(' ')[1], teammate.split(' ')[0]) if not self_called else None
+                write_game_to_database(num_players, players_id, taker_id, contract, self_called, teammate_id, oudlers, bonuses, points, point_to_make)
                 #compute scores for each player
                 score = 0
                 for player in players:
