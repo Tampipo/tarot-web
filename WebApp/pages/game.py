@@ -3,12 +3,11 @@ from pages.nav import *
 import datetime
 from utils import *
 from app import app
-
+from globals import player_options
 # Fetch player names from the database
-player_names = get_players_names()
+
 contract_names = ['Small', 'Guard', 'Guard without', 'Guard against']
 # Create options for dbc.Select
-player_options = [{'label': name, 'value': name} for name in player_names]
 contract_options = [{'label': name, 'value': name} for name in contract_names]
 initial_colors = {'btn-petit_au_bout': 'secondary', 'btn-misery': 'secondary'}
 
@@ -45,7 +44,7 @@ main_game = html.Div(
                             [
                                dbc.Checklist(
                                     options=[{"label": "Player called himself", "value": 1}],
-                                    value=[],
+                                    value=True,
                                     id='player-called-self',
                                     inline=True,
                                     switch=True,
@@ -144,7 +143,8 @@ def update_taker_options(*selected_players):
     return taker_options
 
 @app.callback(
-    Output('teammate', 'options'),
+    [Output('teammate', 'options'),
+    Output('player-called-self', 'value')],
     [Input('player-called-self', 'value'),
      Input('player-select-1', 'value'),
      Input('player-select-2', 'value'),
@@ -157,10 +157,11 @@ def update_teammate_options(self_called, *selected_players):
     Update the possible players for the taker dropdown based on the selected players
     """
     selected_players = [player for player in selected_players if player is not None]
+    print(self_called)
     if self_called:
-        return None
+        return [], self_called
     taker_options = [{'label': option['label'], 'value': option['value']} for option in player_options if option['value'] in selected_players]
-    return taker_options
+    return taker_options, not self_called
 
 @app.callback(
     Output('store-number-of-players', 'data'),  # Update to store data
@@ -260,6 +261,8 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, self_call
         else: 
             num_players = num_players_data.get('num_players', 0) if num_players_data else 0
             players = [player_1, player_2, player_3, player_4, player_5]
+            print(players)
+            bonuses=[]
             if num_players < 3:
                 alert = dbc.Alert("Please select at least 3 players", color="danger", style={"maxWidth": "500px"})
             else:
@@ -280,13 +283,21 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, self_call
                 if petit_color != 'secondary':
                     if petit_color == 'danger':
                         points = points - 10
+                        bonuses.append(-1)
                     else:
                         points = points + 10
+                        bonuses.append(1)
+                else:
+                    bonuses.append(0)
                 if misery_color != 'secondary':
                     if misery_color == 'danger':
                         points = points - 10
+                        bonuses.append(-1)
                     else:
                         points = points + 10
+                        bonuses.append(1)
+                else:
+                    bonuses.append(0)
                 # Compute the number of points based on the contract
                 if contract == 'Small':
                     coeff = 1
@@ -301,27 +312,48 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, self_call
                 if poignee_color != 'secondary':
                     if poignee_color == 'danger':
                         points = points - 20
+                        bonuses.append(-1)
                     else:
                         points = points + 20
+                        bonuses.append(1)
+                else:
+                    bonuses.append(0)
                 if poignee2_color != 'secondary':
                     if poignee2_color == 'danger':
                         points = points - 30
+                        bonuses.append(-1)
                     else:
                         points = points + 30
+                        bonuses.append(1)
+                else:
+                    bonuses.append(0)
                 if poignee3_color != 'secondary':
                     if poignee3_color == 'danger':
                         points = points - 40
+                        bonuses.append(-1)
                     else:
                         points = points + 40
+                        bonuses.append(1)
+                else:
+                    bonuses.append(0)
                 if points < 0:
-                    points = -points
-                    alert = dbc.Alert(f"Team has lost {points} points", color="danger", style={"maxWidth": "500px"})
+                    lost_points = -points
+                    alert = dbc.Alert(f"Team has lost {lost_points} points", color="danger", style={"maxWidth": "500px"})
                 else:
                     alert = dbc.Alert(f"Team has won {points} points", color="success", style={"maxWidth": "500px"})
+                
+                player_called_himself = not self_called
+                players_id = [get_player_id(player.split(' ')[1], player.split(' ')[0]) for player in players]
+                taker_id = get_player_id(taker.split(' ')[1], taker.split(' ')[0])
+                teammate_id = get_player_id(teammate.split(' ')[1], teammate.split(' ')[0]) if not player_called_himself else None
+                write_game_to_database(num_players, players_id, taker_id, contract, player_called_himself, teammate_id, oudlers, bonuses, points, point_to_make)
                 #compute scores for each player
                 score = 0
                 for player in players:
                     if player is not None:
+                        player_name = player.split(' ')[1]
+                        player_surname = player.split(' ')[0]
+                        player_id = get_player_id(player_name, player_surname)
                         if num_players == 5 :
                             if self_called:
                                 if player == taker:
@@ -335,7 +367,8 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, self_call
                                     score = points
                                 else:
                                     score = -points
-                        write_score_to_database
+                        # write_score_to_database(score, player_id)
+                
         return dbc.Row(
             dbc.Col(
                 alert,

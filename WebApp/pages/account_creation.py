@@ -3,8 +3,8 @@ from pages.nav import *
 import datetime
 
 from app import app
-
-
+from utils import get_players_names
+from globals import player_options
 main_acc = html.Div(
     [
     navbar,  # add the navbar from nav.py
@@ -113,7 +113,8 @@ def create_account(n_clicks, name, surname, email):
                 
                 # Create account success alert
                 alert = dbc.Alert(f"Account created for {name} {surname} with email {email}.", color="success", style={"maxWidth": "500px"})
-
+                player_names = get_players_names()
+                player_options[:] = [{'label': name, 'value': name} for name in player_names]
         return dbc.Row(
             dbc.Col(
                 alert,
