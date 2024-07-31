@@ -28,22 +28,44 @@ def write_game_to_database(n_players,players_id, taker_id, contract, self_called
     
 
 def write_score_to_database(score, player_id):
+    
     date = str(get_month()) + '/' + str(get_year())
     df_month = pd.read_csv(os.path.join(database_path, f'scores_{date}.csv'), dtype={'ID': int, 'Ngames': int, 'BiggestWin': int, 'BiggestLoss': int})
+    #check if player is in the database
+    if player_id not in df_month['ID'].values:
+        new_player = pd.DataFrame({'ID': [player_id], 'Ngames': [0], 'Score': [0], 'Mean': [0], 'Std': [0], 'Taker': [0], 'BiggestWin': [0], 'BiggestLoss': [0]})
+        df_month = pd.concat([df_month, new_player], ignore_index=True)
+    
     df = pd.read_csv(os.path.join(database_path, 'scores.csv'),dtype={'ID': int, 'Ngames': int, 'BiggestWin': int, 'BiggestLoss': int})
+    #check if player is in the database
+    if player_id not in df['ID'].values:
+        new_player = pd.DataFrame({'ID': [player_id], 'Ngames': [0], 'Score': [0], 'Mean': [0], 'Std': [0], 'Taker': [0], 'BiggestWin': [0], 'BiggestLoss': [0]})
+        df = pd.concat([df, new_player], ignore_index=True)
     #increase scores in the database for the player
+    current_ngames = df.loc[df['ID'] == player_id, 'Ngames'].values[0]
+    current_ngames_month = df_month.loc[df_month['ID'] == player_id, 'Ngames'].values[0]
+    current_std = df.loc[df['ID'] == player_id, 'Std'].values[0]
+    current_std_month = df_month.loc[df_month['ID'] == player_id, 'Std'].values[0]
+    current_mean = df.loc[df['ID'] == player_id, 'Mean'].values[0]
+    current_mean_month = df_month.loc[df_month['ID'] == player_id, 'Mean'].values[0]
+
     df.loc[df['ID'] == player_id, 'Ngames'] += 1
     df_month.loc[df_month['ID'] == player_id, 'Ngames'] += 1
     df.loc[df['ID'] == player_id, 'Score'] += score
     df_month.loc[df_month['ID'] == player_id, 'Score'] += score
-    current_mean = df.loc[df['ID'] == player_id, 'Mean'].values[0]
-    current_mean_month = df_month.loc[df_month['ID'] == player_id, 'Mean'].values[0]
+
+
+    #compute new_mean
     df.loc[df['ID'] == player_id, 'Mean'] = df.loc[df['ID'] == player_id, 'Score'] / df.loc[df['ID'] == player_id, 'Ngames']
     df_month.loc[df_month['ID'] == player_id, 'Mean'] = df_month.loc[df_month['ID'] == player_id, 'Score'] / df_month.loc[df_month['ID'] == player_id, 'Ngames']
+
     #compute new_std
-    current_std = df.loc[df['ID'] == player_id, 'Std'].values[0]
-    current_std_month = df_month.loc[df_month['ID'] == player_id, 'Std'].values[0]
-    
+    new_std = (current_ngames-1)/current_ngames*(current_std + current_ngames/(current_ngames**2-1)*(current_mean-score)**2)
+    new_std_month = (current_ngames_month-1)/current_ngames_month*(current_std_month+current_ngames_month/(current_ngames_month**2-1)*(current_mean_month-score)**2)
+
+    df.loc[df['ID'] == player_id, 'Std'] = new_std
+    df_month.loc[df_month['ID'] == player_id, 'Std'] = new_std_month
+
     #check for biggest win and loss
     if score > df.loc[df['ID'] == player_id, 'BiggestWin'].values[0]:
         df.loc[df['ID'] == player_id, 'BiggestWin'] = score
