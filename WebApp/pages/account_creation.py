@@ -105,7 +105,11 @@ def create_account(n_clicks, name, surname, email):
             else:
                 # Player does not exist, proceed with account creation
                 # Append new player data to the DataFrame
-                new_player = pd.DataFrame({'Name': [name], 'Surname': [surname], 'Email': [email], 'ID': [df['ID'].max() + 1]})
+                
+                if df['ID'].empty:
+                    new_player = pd.DataFrame({'Name': [name], 'Surname': [surname], 'Email': [email], 'ID': [0]})
+                else:
+                    new_player = pd.DataFrame({'Name': [name], 'Surname': [surname], 'Email': [email], 'ID': [df['ID'].max() + 1]})
                 df = pd.concat([df, new_player], ignore_index=True)
                 
                 # Save the updated DataFrame back to CSV

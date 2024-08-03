@@ -260,7 +260,7 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, player_ca
     if not os.path.exists(os.path.join(database_path, f'scores_{date}.csv')):
         #create scores database
         with open(os.path.join(database_path, f'scores_{date}.csv'), 'w') as f:
-            f.write('ID,Ngames,Score,Mean,Std,Taker,BiggestWin,Biggestloss\n')
+            f.write('ID,Ngames,Score,Mean,Std,Taker,BiggestWin,BiggestLoss\n')
     if n_clicks is not None:
         if contract is None or oudlers is None or num is None or taker is None:
             alert = dbc.Alert("Please fill in all the fields", color="danger", style={"maxWidth": "500px"})
@@ -285,7 +285,7 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, player_ca
                 elif oudlers == 3:
                     point_to_make = 36
                 # Compute the number of points made
-                points = (points - point_to_make)
+                points = (points - point_to_make)+25
                 if petit_color != 'secondary':
                     if petit_color == 'danger':
                         points = points - 10
@@ -313,7 +313,7 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, player_ca
                     coeff = 4
                 elif contract == 'Guard against':
                     coeff = 6
-                points = (points - point_to_make)*coeff
+                points = points*coeff
                 # Add points for additional options
                 if poignee_color != 'secondary':
                     if poignee_color == 'danger':
@@ -347,7 +347,6 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, player_ca
                     alert = dbc.Alert(f"Team has lost {lost_points} points", color="danger", style={"maxWidth": "500px"})
                 else:
                     alert = dbc.Alert(f"Team has won {points} points", color="success", style={"maxWidth": "500px"})
-                print(self_called)
                 players_id = [get_player_id(player.split(' ')[1], player.split(' ')[0]) for player in players]
                 taker_id = get_player_id(taker.split(' ')[1], taker.split(' ')[0])
                 teammate_id = get_player_id(teammate.split(' ')[1], teammate.split(' ')[0]) if not self_called else None
@@ -372,12 +371,12 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, player_ca
                                     score = points
                                 else:
                                     score = -points
-                        # write_score_to_database(score, player_id)
+                        write_score_to_database(score, player_id, taker_id)
                 
         return dbc.Row(
             dbc.Col(
                 alert,
-                width={"size": 6, "offset":1},  # Adjust size and offset for centering
+                width={"size": 6, "offset":3},  # Adjust size and offset for centering
             ),
             justify="center",  # Ensure the column is centered in the row
         )
