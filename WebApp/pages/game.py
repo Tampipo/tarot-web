@@ -285,7 +285,7 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, player_ca
                 elif oudlers == 3:
                     point_to_make = 36
                 # Compute the number of points made
-                points = (points - point_to_make)+25
+                points = (points - point_to_make)
                 if petit_color != 'secondary':
                     if petit_color == 'danger':
                         points = points - 10
@@ -313,6 +313,10 @@ def compute_points(contract, oudlers, num, n_clicks, num_players_data, player_ca
                     coeff = 4
                 elif contract == 'Guard against':
                     coeff = 6
+                if points < 0:
+                    points -= 25
+                else:
+                    points += 25
                 points = points*coeff
                 # Add points for additional options
                 if poignee_color != 'secondary':
