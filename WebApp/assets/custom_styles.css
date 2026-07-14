@@ -1,5 +1,0 @@
-@media (max-width: 768px) {
-    .flex-nowrap {
-        flex-wrap: wrap !important; /* Force wrapping on smaller screens */
-    }
-}

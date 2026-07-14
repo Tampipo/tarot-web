@@ -1,0 +1,93 @@
+name: Build and push images
+
+# Typechecks + runs the scoring tests, then builds the api and web images and
+# pushes them to GHCR. No image is ever built from a commit whose tests fail.
+#
+# Deployment (k3s) is out of scope here — these images are just published to
+# ghcr.io/<owner>/tarot-api and ghcr.io/<owner>/tarot-web. Pulling them onto the
+# cluster is handled elsewhere.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Prisma client types are needed for the API typecheck.
+      - run: npm run generate
+      - run: npm run lint
+      - run: npm test
+
+  build:
+    needs: test
+    # Don't publish from pull requests — build only, on pushes to main / tags.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            image: tarot-api
+            dockerfile: packages/api/Dockerfile
+          - name: web
+            image: tarot-web
+            dockerfile: packages/web/Dockerfile
+
+    name: build ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # metadata-action lowercases the owner and emits the tag set:
+      #   sha-<short>   (immutable, every build)
+      #   latest        (default branch only)
+      #   vX.Y.Z / vX.Y (on a v* git tag)
+      - name: Compute tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Per-image cache scope so api and web don't clobber each other.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

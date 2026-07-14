@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+  // native = local dev; linux-musl-openssl-3.0.x = the node:20-alpine runtime image.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// An authenticated account. Either a local password login (passwordHash set) or
+// a federated identity (oidcSub set) — never invented, never both required.
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String? // null for OIDC-only accounts
+  oidcSub      String?  @unique // subject claim from the IdP
+  createdAt    DateTime @default(now())
+
+  createdGames Game[] @relation("createdBy")
+}
+
+// A person who sits at the tarot table. Decoupled from User on purpose: you
+// score games for friends who never log in. Scores are always aggregated from
+// GamePlayer rows, never stored as a running total (the old CSV did the latter
+// and drifted).
+model Player {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  gamePlayers GamePlayer[]
+  takenGames  Game[]       @relation("taker")
+  partneredIn Game[]       @relation("partner")
+}
+
+// One scored deal. baseScore is the deal's value to the attack; the signed
+// per-player results live in GamePlayer and always sum to zero.
+model Game {
+  id          String   @id @default(cuid())
+  playedAt    DateTime @default(now())
+  contract    String
+  oudlers     Int
+  pointsMade  Int
+  selfCalled  Boolean // taker played alone (no partner)
+  petitAuBout String   @default("none") // none | attack | defense
+  poignee     String   @default("none") // none | simple | double | triple
+  poigneeSide String   @default("none") // none | attack | defense
+  misere      String   @default("none") // none | attack | defense
+  baseScore   Int
+
+  takerId     String
+  taker       Player  @relation("taker", fields: [takerId], references: [id])
+  partnerId   String?
+  partner     Player? @relation("partner", fields: [partnerId], references: [id])
+
+  createdById String?
+  createdBy   User?   @relation("createdBy", fields: [createdById], references: [id])
+
+  players GamePlayer[]
+
+  @@index([playedAt])
+}
+
+// A player's signed result in one game. This is the single source of truth for
+// every leaderboard and statistic.
+model GamePlayer {
+  gameId   String
+  game     Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  playerId String
+  player   Player @relation(fields: [playerId], references: [id])
+  score    Int
+
+  @@id([gameId, playerId])
+  @@index([playerId])
+}
