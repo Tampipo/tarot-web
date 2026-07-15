@@ -1,7 +1,10 @@
-# Ignore database
-database/
-#Ignore python cache
-__pycache__/
+node_modules/
+dist/
+*.tsbuildinfo
 
-# Ignore all .pyc files
-*.pyc
+# Local env — real secrets never committed. Use .env.example as the template.
+.env
+.env.local
+
+# Prisma generated client
+packages/api/src/generated/

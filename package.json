@@ -1,0 +1,31 @@
+{
+  "name": "tarot-web",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/api",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx watch packages/api/src/index.ts",
+    "dev:web": "vite --config packages/web/vite.config.ts",
+    "build": "npm run build:shared && npm run build:api && npm run build:web",
+    "build:shared": "tsc -p packages/shared/tsconfig.build.json",
+    "build:api": "tsc -p packages/api/tsconfig.json",
+    "build:web": "vite build --config packages/web/vite.config.ts",
+    "lint": "npm run build:shared && tsc -p packages/api/tsconfig.json --noEmit && tsc -p packages/web/tsconfig.json --noEmit",
+    "test": "vitest run",
+    "migrate": "prisma migrate dev --schema=prisma/schema.prisma",
+    "migrate:deploy": "prisma migrate deploy --schema=prisma/schema.prisma",
+    "generate": "prisma generate --schema=prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

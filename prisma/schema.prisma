@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+  // native = local dev; linux-musl-openssl-3.0.x = the node:20-alpine runtime image.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// An authenticated account (email + password).
+//   role   — "admin" | "member". Admins approve registrations and manage users.
+//   status — "pending" | "active". New sign-ups start pending and cannot log in
+//            until an admin approves them (keeps strangers out).
+// The bootstrap admin (from ADMIN_EMAIL/ADMIN_PASSWORD) is created active.
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("member")
+  status       String   @default("pending")
+  createdAt    DateTime @default(now())
+
+  // A member IS a player: once approved, they can be seated in a game. There is
+  // no separate roster — people who never log in sit as untracked guests.
+  createdGames Game[]       @relation("createdBy")
+  gamePlayers  GamePlayer[]
+  takenGames   Game[]       @relation("taker")
+  partneredIn  Game[]       @relation("partner")
+}
+
+// Single-row app config (id is always "singleton").
+model Settings {
+  id String @id @default("singleton")
+  // How often the scoreboard resets. null = manual only; otherwise a new season
+  // opens every N months (1 = monthly, 3 = quarterly, 12 = yearly…).
+  seasonPeriodMonths Int?
+  updatedAt          DateTime @updatedAt
+}
+
+// A scoring period. Exactly one season is open (endedAt == null) at a time; the
+// scoreboard defaults to it, so starting a new season *is* the score reset.
+// Closed seasons keep their games forever and stay browsable.
+model Season {
+  id        String    @id @default(cuid())
+  name      String
+  startedAt DateTime  @default(now())
+  endedAt   DateTime? // null = in progress
+
+  games Game[]
+
+  @@index([startedAt])
+}
+
+// One scored deal. baseScore is the deal's value to the attack; the signed
+// per-player results live in GamePlayer and always sum to zero.
+model Game {
+  id          String   @id @default(cuid())
+  playedAt    DateTime @default(now())
+  contract    String
+  oudlers     Int
+  pointsMade  Int
+  // Seats at the table (3–5). Stored because guest seats produce no GamePlayer
+  // row, so players.length alone would under-report the real table size.
+  numPlayers  Int
+  selfCalled  Boolean // taker played alone (no partner)
+  petitAuBout String   @default("none") // none | attack | defense
+  // Size only: the bonus always goes to whichever camp won the deal.
+  poignee     String   @default("none") // none | simple | double | triple
+  misere      String   @default("none") // none | attack | defense
+  baseScore   Int
+
+  seasonId    String
+  season      Season  @relation(fields: [seasonId], references: [id])
+
+  takerId     String
+  taker       User    @relation("taker", fields: [takerId], references: [id])
+  partnerId   String?
+  partner     User?   @relation("partner", fields: [partnerId], references: [id])
+
+  createdById String?
+  // Keep the game if its author is later deleted — history outlives accounts.
+  createdBy   User?   @relation("createdBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  players GamePlayer[]
+
+  @@index([playedAt])
+  @@index([seasonId])
+}
+
+// A member's signed result in one game — the single source of truth for every
+// leaderboard and statistic. Guest seats are deliberately absent: they take
+// part in the scoring maths but are never recorded.
+model GamePlayer {
+  gameId String
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  score  Int
+
+  @@id([gameId, userId])
+  @@index([userId])
+}

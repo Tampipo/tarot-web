@@ -1,0 +1,67 @@
+# Local prod-like stack. `docker compose up --build` brings up:
+#   postgres -> migrate (schema push, runs once) -> api -> web (nginx)
+# Open the app on http://localhost:8080 . The API is reached through nginx at
+# http://localhost:8080/api .
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Syncs the schema, then exits. Uses the api builder stage because it carries
+  # the Prisma CLI. No demo data — the roster starts empty.
+  migrate:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+      target: builder
+    command: sh -c "npx prisma db push --schema=prisma/schema.prisma"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: packages/api/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+      PORT: ${PORT:-3000}
+      NODE_ENV: ${NODE_ENV:-production}
+      ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    environment:
+      # nginx proxies /api/* to the compose api service.
+      API_UPSTREAM: api:3000
+    ports:
+      # Host port is configurable so the stack can coexist with others.
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
