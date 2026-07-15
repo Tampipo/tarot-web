@@ -26,7 +26,8 @@ export interface GameDTO {
   misere: string;
   baseScore: number;
   won: boolean;
-  taker: { id: string; name: string };
+  /** null = a guest took. `selfCalled` distinguishes "alone" from a guest partner. */
+  taker: { id: string; name: string } | null;
   partner: { id: string; name: string } | null;
   players: GamePlayerDTO[];
 }

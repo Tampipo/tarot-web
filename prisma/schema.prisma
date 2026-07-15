@@ -75,8 +75,11 @@ model Game {
   seasonId    String
   season      Season  @relation(fields: [seasonId], references: [id])
 
-  takerId     String
-  taker       User    @relation("taker", fields: [takerId], references: [id])
+  // Both are null when a guest filled that role — guests have no User row, and
+  // nothing about them is ever stored. `selfCalled` is what tells "taker played
+  // alone" apart from "the partner was a guest".
+  takerId     String?
+  taker       User?   @relation("taker", fields: [takerId], references: [id])
   partnerId   String?
   partner     User?   @relation("partner", fields: [partnerId], references: [id])
 

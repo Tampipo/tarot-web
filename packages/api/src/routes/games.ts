@@ -50,7 +50,8 @@ function serializeGame(g: NonNullable<GameWithRelations>) {
     misere: g.misere,
     baseScore: g.baseScore,
     won: g.baseScore >= 0,
-    taker: { id: g.taker.id, name: g.taker.name },
+    // null in either role = a guest played it (see selfCalled for "alone").
+    taker: g.taker ? { id: g.taker.id, name: g.taker.name } : null,
     partner: g.partner ? { id: g.partner.id, name: g.partner.name } : null,
     // Members only — guest seats were never stored.
     players: g.players.map((p) => ({ id: p.user.id, name: p.user.name, score: p.score })),
@@ -73,13 +74,13 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.post("/games", { preHandler: requireAuth }, async (req, reply) => {
     const body = createGameSchema.parse(req.body);
 
-    // The taker and partner anchor the game record (FKs to User), so they must
-    // be members — a guest can only ever fill a defending seat.
-    if (isGuest(body.takerId) || (body.partnerId && isGuest(body.partnerId))) {
-      return reply.code(400).send({ error: "GUEST_CANNOT_TAKE" });
-    }
-
     const realIds = [...new Set(body.playerIds.filter((id) => !isGuest(id)))];
+    // Anyone may take, guests included — we simply record the members' scores
+    // and the guest's share goes unstored (so the saved rows won't sum to zero).
+    // A deal with nobody tracked would record nothing at all, though.
+    if (realIds.length === 0) {
+      return reply.code(400).send({ error: "NO_TRACKED_PLAYER" });
+    }
     // Every seated id must be an approved member: a bad or unapproved id is a
     // clean 400 rather than an FK 500.
     const found = await prisma.user.count({
@@ -110,8 +111,11 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
         poignee: body.poignee,
         misere: body.misere,
         baseScore: result.baseScore,
-        takerId: body.takerId,
-        partnerId: body.partnerId,
+        // A guest in either role stores as null; selfCalled still records
+        // whether the taker had a partner at all.
+        takerId: isGuest(body.takerId) ? null : body.takerId,
+        partnerId:
+          body.partnerId && !isGuest(body.partnerId) ? body.partnerId : null,
         createdById: req.authUser!.id,
         // Only member seats are persisted; guests leave no trace.
         players: {
