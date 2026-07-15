@@ -6,6 +6,14 @@ import { requireAuth } from "../lib/session";
 
 const sideSchema = z.enum(["none", "attack", "defense"]);
 
+/**
+ * A seat is either a registered player's id or a guest marker ("guest:<seat>").
+ * Guests fill a chair so the deal scores correctly, but nothing about them is
+ * stored — no GamePlayer row, so they never reach a leaderboard.
+ */
+const GUEST_PREFIX = "guest:";
+const isGuest = (id: string) => id.startsWith(GUEST_PREFIX);
+
 const createGameSchema = z.object({
   playerIds: z.array(z.string()).min(3).max(5),
   takerId: z.string(),
@@ -35,6 +43,7 @@ function serializeGame(g: NonNullable<GameWithRelations>) {
     contract: g.contract,
     oudlers: g.oudlers,
     pointsMade: g.pointsMade,
+    numPlayers: g.numPlayers,
     selfCalled: g.selfCalled,
     petitAuBout: g.petitAuBout,
     poignee: g.poignee,
@@ -44,6 +53,7 @@ function serializeGame(g: NonNullable<GameWithRelations>) {
     won: g.baseScore >= 0,
     taker: { id: g.taker.id, name: g.taker.name },
     partner: g.partner ? { id: g.partner.id, name: g.partner.name } : null,
+    // Registered players only — guest seats were never stored.
     players: g.players.map((p) => ({ id: p.player.id, name: p.player.name, score: p.score })),
   };
 }
@@ -64,14 +74,21 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.post("/games", { preHandler: requireAuth }, async (req, reply) => {
     const body = createGameSchema.parse(req.body);
 
+    // The taker and partner anchor the game record (FKs to Player), so they
+    // must be registered — a guest can only ever fill a defending seat.
+    if (isGuest(body.takerId) || (body.partnerId && isGuest(body.partnerId))) {
+      return reply.code(400).send({ error: "GUEST_CANNOT_TAKE" });
+    }
+
+    const realIds = [...new Set(body.playerIds.filter((id) => !isGuest(id)))];
     // Reject unknown players up front so a bad id is a clean 400, not an FK 500.
-    const found = await prisma.player.count({ where: { id: { in: body.playerIds } } });
-    if (found !== new Set(body.playerIds).size) {
+    const found = await prisma.player.count({ where: { id: { in: realIds } } });
+    if (found !== realIds.length) {
       return reply.code(400).send({ error: "UNKNOWN_PLAYER" });
     }
 
-    // The shared engine validates the deal and throws ScoringError (→ 400) on
-    // anything inconsistent, so scoring and persistence never disagree.
+    // The shared engine validates the deal (guests included, so the split stays
+    // correct) and throws ScoringError (→ 400) on anything inconsistent.
     const input: GameInput = { ...body };
     const result = scoreGame(input);
 
@@ -80,6 +97,7 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
         contract: body.contract,
         oudlers: body.oudlers,
         pointsMade: body.pointsMade,
+        numPlayers: body.playerIds.length,
         selfCalled: body.partnerId === null,
         petitAuBout: body.petitAuBout,
         poignee: body.poignee,
@@ -89,8 +107,9 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
         takerId: body.takerId,
         partnerId: body.partnerId,
         createdById: req.authUser!.id,
+        // Only registered seats are persisted; guests leave no trace.
         players: {
-          create: body.playerIds.map((pid) => ({ playerId: pid, score: result.scores[pid] })),
+          create: realIds.map((pid) => ({ playerId: pid, score: result.scores[pid] })),
         },
       },
       include: { taker: true, partner: true, players: { include: { player: true } } },

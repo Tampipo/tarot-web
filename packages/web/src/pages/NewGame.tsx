@@ -10,8 +10,9 @@ import {
   type Poignee,
   type Side,
 } from "@tarot/shared";
+import { Link } from "react-router-dom";
 import { api, errorMessage } from "../lib/api";
-import { Alert, Button, Card, Field, Input, Select, SideToggle } from "../components/ui";
+import { Alert, Button, Card, Field, Input, Select, SideToggle, Spinner } from "../components/ui";
 import { scoreClass, signed } from "../lib/format";
 import type { Player } from "../lib/types";
 
@@ -22,8 +23,14 @@ const POIGNEE_OPTIONS = [
   { value: "triple", label: "Triple (40)" },
 ];
 
+// A guest fills a seat so the deal scores correctly, but nothing about them is
+// saved. Each seat gets its own marker so two guests never collide.
+const GUEST_PREFIX = "guest:";
+const isGuest = (id: string) => id.startsWith(GUEST_PREFIX);
+const guestId = (seat: number) => `${GUEST_PREFIX}${seat}`;
+
 export function NewGame() {
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<Player[] | null>(null); // null = loading
   const [numPlayers, setNumPlayers] = useState(4);
   const [slots, setSlots] = useState<string[]>(["", "", "", ""]);
   const [takerId, setTakerId] = useState("");
@@ -59,17 +66,24 @@ export function NewGame() {
     setSaved(null);
   }
 
-  const nameOf = (id: string) => players.find((p) => p.id === id)?.name ?? id;
+  const nameOf = (id: string) =>
+    isGuest(id) ? "Guest" : (players?.find((p) => p.id === id)?.name ?? id);
   const chosen = slots.filter(Boolean);
   const usePartner = numPlayers === 5 && !alone;
 
-  // Options for one player slot: every player not already picked in another slot.
+  // Options for one seat: every player not already picked elsewhere, plus Guest.
   function slotOptions(index: number) {
-    return players
-      .filter((p) => !slots.some((s, i) => i !== index && s === p.id))
-      .map((p) => ({ value: p.id, label: p.name }));
+    return [
+      ...(players ?? [])
+        .filter((p) => !slots.some((s, i) => i !== index && s === p.id))
+        .map((p) => ({ value: p.id, label: p.name })),
+      { value: guestId(index), label: "Guest (not recorded)" },
+    ];
   }
-  const seatedOptions = chosen.map((id) => ({ value: id, label: nameOf(id) }));
+  // Taker and partner must be registered — a guest can only defend.
+  const seatedOptions = chosen
+    .filter((id) => !isGuest(id))
+    .map((id) => ({ value: id, label: nameOf(id) }));
 
   // Build a GameInput and score it live. Any inconsistency (unfilled slot, bad
   // partner…) surfaces as `null` so the preview and Save button stay disabled.
@@ -138,11 +152,16 @@ export function NewGame() {
     }
   }
 
-  if (players.length > 0 && players.length < 3) {
+  if (players === null) return <Spinner />;
+
+  // Guests can fill any defending seat, but the taker must be registered — so
+  // one real player is the minimum to score anything.
+  if (players.length === 0) {
     return (
       <Card title="New game">
         <div className="empty">
-          You need at least 3 players. Add more on the Players page.
+          No players yet. <Link to="/players" style={{ color: "var(--primary)" }}>Add a player</Link>{" "}
+          first — the taker has to be a registered player. Everyone else can sit in as a guest.
         </div>
       </Card>
     );
@@ -318,9 +337,18 @@ export function NewGame() {
                         ? "Partner"
                         : "Defence";
                   const s = preview.scores[id];
+                  const guest = isGuest(id);
                   return (
                     <tr key={id}>
-                      <td style={{ fontWeight: 600 }}>{nameOf(id)}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {nameOf(id)}
+                        {guest && (
+                          <span className="muted" style={{ fontWeight: 400 }}>
+                            {" "}
+                            · not recorded
+                          </span>
+                        )}
+                      </td>
                       <td className="muted">{role}</td>
                       <td className="num">
                         <span className={scoreClass(s)}>{signed(s)}</span>

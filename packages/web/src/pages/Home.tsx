@@ -73,7 +73,7 @@ export function GameRow({ game }: { game: GameDTO }) {
           </span>
         </div>
         <div className="muted" style={{ fontSize: "0.85rem" }}>
-          {dateLabel(game.playedAt)} · {game.players.length} players · {game.oudlers} oudler
+          {dateLabel(game.playedAt)} · {game.numPlayers} players · {game.oudlers} oudler
           {game.oudlers === 1 ? "" : "s"} · {game.pointsMade} pts
         </div>
       </div>

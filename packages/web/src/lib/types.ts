@@ -18,6 +18,8 @@ export interface GameDTO {
   contract: string;
   oudlers: number;
   pointsMade: number;
+  /** Seats at the table. May exceed players.length when guests played. */
+  numPlayers: number;
   selfCalled: boolean;
   petitAuBout: string;
   poignee: string;

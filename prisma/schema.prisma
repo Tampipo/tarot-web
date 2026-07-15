@@ -48,6 +48,9 @@ model Game {
   contract    String
   oudlers     Int
   pointsMade  Int
+  // Seats at the table (3–5). Stored because guest seats produce no GamePlayer
+  // row, so players.length alone would under-report the real table size.
+  numPlayers  Int
   selfCalled  Boolean // taker played alone (no partner)
   petitAuBout String   @default("none") // none | attack | defense
   poignee     String   @default("none") // none | simple | double | triple
@@ -69,8 +72,9 @@ model Game {
   @@index([playedAt])
 }
 
-// A player's signed result in one game. This is the single source of truth for
-// every leaderboard and statistic.
+// A registered player's signed result in one game — the single source of truth
+// for every leaderboard and statistic. Guest seats are deliberately absent:
+// they take part in the scoring maths but are never recorded.
 model GamePlayer {
   gameId   String
   game     Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)

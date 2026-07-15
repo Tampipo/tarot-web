@@ -31,6 +31,16 @@ running total.
 
 Run the tests: `npm test`.
 
+## Players and guests
+
+The roster starts empty — add players on the Players page. Any seat can instead
+be filled by a **Guest**: they count for the scoring maths (table size and the
+zero-sum split are computed with them), but nothing about them is stored — no
+`GamePlayer` row, so they never appear on a leaderboard. The taker and partner
+must be registered players, since the game record keys off them; a guest can
+only defend. Because guest scores aren't recorded, the leaderboard totals only
+sum to zero for games played entirely by registered players.
+
 ## Auth
 
 Email + password, stored in Postgres. Sessions are a signed JWT in an httpOnly
@@ -56,7 +66,7 @@ Set `ALLOW_SIGNUP=false` to freeze registration entirely.
 
 ```bash
 cp .env.example .env          # then fill SESSION_SECRET (openssl rand -hex 32)
-docker compose up --build     # postgres → migrate+seed → api → web
+docker compose up --build     # postgres → migrate → api → web
 ```
 
 App: <http://localhost:8080> — the API is proxied at `/api`.
@@ -69,7 +79,6 @@ npm run generate                                  # prisma client
 export DATABASE_URL=postgresql://tarot:tarot@localhost:5432/tarot
 export SESSION_SECRET=$(openssl rand -hex 32)
 npm run migrate                                   # or: npx prisma db push
-npm run seed
 npm run dev                                        # api :3000 + web :5173 (proxies /api)
 ```
 
