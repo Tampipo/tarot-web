@@ -3,6 +3,7 @@ import { z } from "zod";
 import { CONTRACTS, scoreGame, type GameInput } from "@tarot/shared";
 import { prisma } from "../prisma";
 import { requireAuth } from "../lib/session";
+import { currentSeason } from "../lib/seasons";
 
 const sideSchema = z.enum(["none", "attack", "defense"]);
 
@@ -31,7 +32,7 @@ type GameWithRelations = Awaited<ReturnType<typeof loadGame>>;
 function loadGame(id: string) {
   return prisma.game.findUniqueOrThrow({
     where: { id },
-    include: { taker: true, partner: true, players: { include: { player: true } } },
+    include: { taker: true, partner: true, players: { include: { user: true } } },
   });
 }
 
@@ -51,8 +52,8 @@ function serializeGame(g: NonNullable<GameWithRelations>) {
     won: g.baseScore >= 0,
     taker: { id: g.taker.id, name: g.taker.name },
     partner: g.partner ? { id: g.partner.id, name: g.partner.name } : null,
-    // Registered players only — guest seats were never stored.
-    players: g.players.map((p) => ({ id: p.player.id, name: p.player.name, score: p.score })),
+    // Members only — guest seats were never stored.
+    players: g.players.map((p) => ({ id: p.user.id, name: p.user.name, score: p.score })),
   };
 }
 
@@ -64,7 +65,7 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
     const games = await prisma.game.findMany({
       orderBy: { playedAt: "desc" },
       take: limit,
-      include: { taker: true, partner: true, players: { include: { player: true } } },
+      include: { taker: true, partner: true, players: { include: { user: true } } },
     });
     return games.map(serializeGame);
   });
@@ -72,15 +73,18 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.post("/games", { preHandler: requireAuth }, async (req, reply) => {
     const body = createGameSchema.parse(req.body);
 
-    // The taker and partner anchor the game record (FKs to Player), so they
-    // must be registered — a guest can only ever fill a defending seat.
+    // The taker and partner anchor the game record (FKs to User), so they must
+    // be members — a guest can only ever fill a defending seat.
     if (isGuest(body.takerId) || (body.partnerId && isGuest(body.partnerId))) {
       return reply.code(400).send({ error: "GUEST_CANNOT_TAKE" });
     }
 
     const realIds = [...new Set(body.playerIds.filter((id) => !isGuest(id)))];
-    // Reject unknown players up front so a bad id is a clean 400, not an FK 500.
-    const found = await prisma.player.count({ where: { id: { in: realIds } } });
+    // Every seated id must be an approved member: a bad or unapproved id is a
+    // clean 400 rather than an FK 500.
+    const found = await prisma.user.count({
+      where: { id: { in: realIds }, status: "active" },
+    });
     if (found !== realIds.length) {
       return reply.code(400).send({ error: "UNKNOWN_PLAYER" });
     }
@@ -90,8 +94,13 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
     const input: GameInput = { ...body };
     const result = scoreGame(input);
 
+    // Deals always land in the season that is open right now (rolling it over
+    // first if it has come due).
+    const season = await currentSeason();
+
     const game = await prisma.game.create({
       data: {
+        seasonId: season.id,
         contract: body.contract,
         oudlers: body.oudlers,
         pointsMade: body.pointsMade,
@@ -104,12 +113,12 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
         takerId: body.takerId,
         partnerId: body.partnerId,
         createdById: req.authUser!.id,
-        // Only registered seats are persisted; guests leave no trace.
+        // Only member seats are persisted; guests leave no trace.
         players: {
-          create: realIds.map((pid) => ({ playerId: pid, score: result.scores[pid] })),
+          create: realIds.map((uid) => ({ userId: uid, score: result.scores[uid] })),
         },
       },
-      include: { taker: true, partner: true, players: { include: { player: true } } },
+      include: { taker: true, partner: true, players: { include: { user: true } } },
     });
 
     return reply.code(201).send({ game: serializeGame(game), result });

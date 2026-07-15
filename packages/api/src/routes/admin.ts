@@ -60,7 +60,9 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // Delete an account (e.g. the temporary bootstrap admin, once a real one
-  // exists). Never delete the last admin.
+  // exists). Never delete the last admin, and never someone who has played:
+  // members *are* players, so dropping them would tear holes in past
+  // leaderboards. Demote or leave them inactive instead.
   app.delete("/admin/users/:id", { preHandler: requireAdmin }, async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const user = await prisma.user.findUnique({ where: { id } });
@@ -68,6 +70,8 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     if (user.role === "admin" && (await wouldOrphanAdmins(id))) {
       return reply.code(409).send({ error: "LAST_ADMIN" });
     }
+    const games = await prisma.gamePlayer.count({ where: { userId: id } });
+    if (games > 0) return reply.code(409).send({ error: "USER_HAS_GAMES", games });
     await prisma.user.delete({ where: { id } });
     return { ok: true };
   });

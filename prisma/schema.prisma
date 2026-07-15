@@ -23,21 +23,35 @@ model User {
   status       String   @default("pending")
   createdAt    DateTime @default(now())
 
-  createdGames Game[] @relation("createdBy")
+  // A member IS a player: once approved, they can be seated in a game. There is
+  // no separate roster — people who never log in sit as untracked guests.
+  createdGames Game[]       @relation("createdBy")
+  gamePlayers  GamePlayer[]
+  takenGames   Game[]       @relation("taker")
+  partneredIn  Game[]       @relation("partner")
 }
 
-// A person who sits at the tarot table. Decoupled from User on purpose: you
-// score games for friends who never log in. Scores are always aggregated from
-// GamePlayer rows, never stored as a running total (the old CSV did the latter
-// and drifted).
-model Player {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  createdAt DateTime @default(now())
+// Single-row app config (id is always "singleton").
+model Settings {
+  id String @id @default("singleton")
+  // How often the scoreboard resets. null = manual only; otherwise a new season
+  // opens every N months (1 = monthly, 3 = quarterly, 12 = yearly…).
+  seasonPeriodMonths Int?
+  updatedAt          DateTime @updatedAt
+}
 
-  gamePlayers GamePlayer[]
-  takenGames  Game[]       @relation("taker")
-  partneredIn Game[]       @relation("partner")
+// A scoring period. Exactly one season is open (endedAt == null) at a time; the
+// scoreboard defaults to it, so starting a new season *is* the score reset.
+// Closed seasons keep their games forever and stay browsable.
+model Season {
+  id        String    @id @default(cuid())
+  name      String
+  startedAt DateTime  @default(now())
+  endedAt   DateTime? // null = in progress
+
+  games Game[]
+
+  @@index([startedAt])
 }
 
 // One scored deal. baseScore is the deal's value to the attack; the signed
@@ -58,10 +72,13 @@ model Game {
   misere      String   @default("none") // none | attack | defense
   baseScore   Int
 
+  seasonId    String
+  season      Season  @relation(fields: [seasonId], references: [id])
+
   takerId     String
-  taker       Player  @relation("taker", fields: [takerId], references: [id])
+  taker       User    @relation("taker", fields: [takerId], references: [id])
   partnerId   String?
-  partner     Player? @relation("partner", fields: [partnerId], references: [id])
+  partner     User?   @relation("partner", fields: [partnerId], references: [id])
 
   createdById String?
   // Keep the game if its author is later deleted — history outlives accounts.
@@ -70,18 +87,19 @@ model Game {
   players GamePlayer[]
 
   @@index([playedAt])
+  @@index([seasonId])
 }
 
-// A registered player's signed result in one game — the single source of truth
-// for every leaderboard and statistic. Guest seats are deliberately absent:
-// they take part in the scoring maths but are never recorded.
+// A member's signed result in one game — the single source of truth for every
+// leaderboard and statistic. Guest seats are deliberately absent: they take
+// part in the scoring maths but are never recorded.
 model GamePlayer {
-  gameId   String
-  game     Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  playerId String
-  player   Player @relation(fields: [playerId], references: [id])
-  score    Int
+  gameId String
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  score  Int
 
-  @@id([gameId, playerId])
-  @@index([playerId])
+  @@id([gameId, userId])
+  @@index([userId])
 }

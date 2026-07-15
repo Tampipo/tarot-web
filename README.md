@@ -39,17 +39,33 @@ Run the tests: `npm test`.
 
 ## Players and guests
 
-The roster starts empty. **Admins** manage it from the Players section of the
-Admin page (a player with recorded games can't be deleted — that would tear
-holes in past leaderboards). Everyone signed in can *read* the roster, since
-New game needs it; each seat dropdown lists the existing players plus **Guest**.
+**A player is an approved member** — there is no separate roster. You become
+seatable by registering an account and having an admin approve it, and each
+account carries a role (`admin` / `member`). That's also what makes "your
+statistics" answerable: the Stats page opens on *you*.
 
-A guest counts for the scoring maths — table size and the zero-sum split are
-computed with them — but nothing about them is stored: no `GamePlayer` row, so
-they never appear on a leaderboard. The taker and partner must be registered
-players, since the game record keys off them via FKs; a guest can only defend.
-Because guest scores aren't recorded, leaderboard totals only sum to zero for
-games played entirely by registered players.
+Any seat can instead be filled by a **Guest**. A guest counts for the scoring
+maths — table size and the zero-sum split are computed with them — but nothing
+about them is stored: no `GamePlayer` row, so they never appear on a
+leaderboard. The taker and partner must be members, since the game record keys
+off them via FKs; a guest can only defend. Because guest scores aren't recorded,
+leaderboard totals only sum to zero for games played entirely by members.
+
+An account that has played can't be deleted (it would tear holes in past
+leaderboards) — demote it instead.
+
+## Seasons
+
+The scoreboard is scoped to a **season**, so starting a new one *is* the score
+reset. Closed seasons keep their games forever and stay browsable from the
+season selector on the Scoreboard and Stats pages (`season=all` spans them all).
+
+Admins pick the cadence on the Admin page: manual only, or automatically every
+N months (monthly, quarterly, yearly…). Rollover is **lazy** — evaluated when a
+game is saved or a scoreboard is read, so no scheduler is needed. A season runs
+N months from its start; when that elapses it closes *at its boundary* and the
+next opens there, keeping the cadence aligned rather than drifting to whenever
+someone next opened the app.
 
 Not standard FFT, for the record: **misère** (±10 × multiplier) is a house rule
 carried over from the old app, and **chelem** isn't implemented.

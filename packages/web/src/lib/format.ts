@@ -9,14 +9,11 @@ export function scoreClass(n: number): string {
   return n > 0 ? "score pos" : n < 0 ? "score neg" : "score";
 }
 
-/** "2026-07" → "July 2026". */
-export function monthLabel(month: string): string {
-  const [y, m] = month.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleString(undefined, {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+/** "Season 3 · Jul 2026 – ongoing" style range for a season. */
+export function seasonRange(startedAt: string, endedAt: string | null): string {
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+  return `${fmt(startedAt)} – ${endedAt ? fmt(endedAt) : "ongoing"}`;
 }
 
 export function dateLabel(iso: string): string {

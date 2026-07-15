@@ -31,6 +31,16 @@ export interface GameDTO {
   players: GamePlayerDTO[];
 }
 
+/** A scoring period. Exactly one is open (endedAt === null) at a time. */
+export interface Season {
+  id: string;
+  name: string;
+  startedAt: string;
+  endedAt: string | null;
+  games: number;
+  current: boolean;
+}
+
 /** A row of the aggregated leaderboard (see GET /scoreboard). */
 export interface ScoreRow {
   id: string;

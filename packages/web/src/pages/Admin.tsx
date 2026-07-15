@@ -1,9 +1,9 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import { api, errorMessage } from "../lib/api";
 import { useAuth } from "../contexts/auth";
-import { Alert, Button, Card, Input, Spinner } from "../components/ui";
-import { dateLabel } from "../lib/format";
-import type { Player } from "../lib/types";
+import { Alert, Button, Card, Select, Spinner } from "../components/ui";
+import { dateLabel, seasonRange } from "../lib/format";
+import type { Season } from "../lib/types";
 
 interface AdminUser {
   id: string;
@@ -103,7 +103,10 @@ export function Admin() {
         )}
       </Card>
 
-      <Card title="Members" subtitle="Promote a trusted member to admin, or remove accounts.">
+      <Card
+        title="Members"
+        subtitle="Approved members are the players you can seat in a game. Promote a trusted one to admin."
+      >
         {users === null ? (
           <Spinner />
         ) : (
@@ -166,103 +169,145 @@ export function Admin() {
         )}
       </Card>
 
-      <PlayersRoster />
+      <Seasons />
     </div>
   );
 }
 
+const PERIODS = [
+  { value: "manual", label: "Manual only" },
+  { value: "1", label: "Every month" },
+  { value: "3", label: "Every 3 months" },
+  { value: "6", label: "Every 6 months" },
+  { value: "12", label: "Every year" },
+];
+
 /**
- * The tarot roster — the people who sit at the table, distinct from the
- * accounts above. Managed here so scoring a game never doubles as data entry.
+ * Seasons = the scoreboard's reset cycle. Closed seasons keep their games, so
+ * resetting never destroys history — it just starts a fresh leaderboard.
  */
-function PlayersRoster() {
-  const [players, setPlayers] = useState<Player[] | null>(null);
-  const [name, setName] = useState("");
+function Seasons() {
+  const [seasons, setSeasons] = useState<Season[] | null>(null);
+  const [period, setPeriod] = useState<string>("manual");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   async function load() {
-    const { data } = await api.get<Player[]>("/players");
-    setPlayers(data);
+    const [s, cfg] = await Promise.all([
+      api.get<Season[]>("/seasons"),
+      api.get<{ seasonPeriodMonths: number | null }>("/settings"),
+    ]);
+    setSeasons(s.data);
+    setPeriod(cfg.data.seasonPeriodMonths ? String(cfg.data.seasonPeriodMonths) : "manual");
   }
   useEffect(() => {
     load();
   }, []);
 
-  async function add(e: FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
+  async function savePeriod(v: string) {
+    setPeriod(v);
+    setError(null);
+    try {
+      await api.put("/admin/settings", {
+        seasonPeriodMonths: v === "manual" ? null : Number(v),
+      });
+      await load();
+    } catch (err) {
+      setError(errorMessage(err, "Could not save the reset cadence"));
+    }
+  }
+
+  async function startNew() {
     setError(null);
     setBusy(true);
     try {
-      await api.post("/players", { name: name.trim() });
-      setName("");
+      await api.post("/admin/seasons", {});
+      setConfirming(false);
       await load();
     } catch (err) {
-      setError(errorMessage(err, "Could not add that player"));
+      setError(errorMessage(err, "Could not start a new season"));
     } finally {
       setBusy(false);
     }
   }
 
-  async function remove(p: Player) {
-    setError(null);
-    try {
-      await api.delete(`/players/${p.id}`);
-      await load();
-    } catch (err) {
-      // A player with recorded games is kept — deleting them would tear holes
-      // in every past leaderboard.
-      setError(errorMessage(err, `${p.name} has recorded games and can't be removed.`));
-    }
-  }
+  const current = seasons?.find((s) => s.current);
+  const past = seasons?.filter((s) => !s.current) ?? [];
 
   return (
-    <Card title="Players" subtitle="The roster picked from in New game. Guests never appear here.">
-      <form className="row" onSubmit={add} style={{ flexWrap: "nowrap" }}>
-        <Input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Add a player…"
-          maxLength={40}
-        />
-        <Button variant="primary" type="submit" loading={busy}>
-          Add
-        </Button>
-      </form>
+    <Card
+      title="Seasons"
+      subtitle="The scoreboard resets each season. Past seasons keep their games and stay browsable."
+    >
+      {error && <Alert kind="danger">{error}</Alert>}
 
-      {error && (
-        <div style={{ marginTop: 14 }}>
-          <Alert kind="danger">{error}</Alert>
+      <div
+        className="grid"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}
+      >
+        <label className="field">
+          <span className="label">Reset automatically</span>
+          <Select value={period} options={PERIODS} onChange={(e) => savePeriod(e.target.value)} />
+        </label>
+        <div className="field">
+          <span className="label">In progress</span>
+          <div style={{ paddingTop: 8 }}>
+            {current ? (
+              <>
+                <strong>{current.name}</strong>{" "}
+                <span className="muted">
+                  · {seasonRange(current.startedAt, current.endedAt)} · {current.games} games
+                </span>
+              </>
+            ) : (
+              <span className="muted">—</span>
+            )}
+          </div>
         </div>
+      </div>
+
+      <div className="hr" style={{ margin: "18px 0" }} />
+
+      {confirming ? (
+        <div className="row" style={{ gap: 10 }}>
+          <span>
+            Close <strong>{current?.name}</strong> and start a fresh scoreboard? Its{" "}
+            {current?.games ?? 0} games stay browsable.
+          </span>
+          <Button variant="primary" loading={busy} onClick={startNew}>
+            Yes, start new season
+          </Button>
+          <Button variant="ghost" onClick={() => setConfirming(false)}>
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <Button onClick={() => setConfirming(true)}>Start a new season now</Button>
       )}
 
-      <div style={{ height: 16 }} />
+      <div style={{ height: 18 }} />
 
-      {players === null ? (
+      {seasons === null ? (
         <Spinner />
-      ) : players.length === 0 ? (
-        <div className="empty">No players yet — add the regulars above.</div>
+      ) : past.length === 0 ? (
+        <div className="empty">No past seasons yet.</div>
       ) : (
         <div className="table-wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Added</th>
-                <th />
+                <th>Season</th>
+                <th>Ran</th>
+                <th className="num">Games</th>
               </tr>
             </thead>
             <tbody>
-              {players.map((p) => (
-                <tr key={p.id}>
-                  <td style={{ fontWeight: 600 }}>{p.name}</td>
-                  <td className="muted">{dateLabel(p.createdAt)}</td>
-                  <td className="num">
-                    <Button variant="danger" className="btn-sm" onClick={() => remove(p)}>
-                      Remove
-                    </Button>
-                  </td>
+              {past.map((s) => (
+                <tr key={s.id}>
+                  <td style={{ fontWeight: 600 }}>{s.name}</td>
+                  <td className="muted">{seasonRange(s.startedAt, s.endedAt)}</td>
+                  <td className="num">{s.games}</td>
                 </tr>
               ))}
             </tbody>
