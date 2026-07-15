@@ -67,10 +67,16 @@ export function NewGame() {
     setSaved(null);
   }
 
-  const nameOf = (id: string) =>
-    isGuest(id) ? "Guest" : (players?.find((p) => p.id === id)?.name ?? id);
   const chosen = slots.filter(Boolean);
   const usePartner = numPlayers === 5 && !alone;
+
+  // Number the guests only when there's more than one, so picking a taker from
+  // two "Guest" entries isn't a coin flip.
+  const guestsSeated = chosen.filter(isGuest);
+  const nameOf = (id: string) => {
+    if (!isGuest(id)) return players?.find((p) => p.id === id)?.name ?? id;
+    return guestsSeated.length > 1 ? `Guest ${guestsSeated.indexOf(id) + 1}` : "Guest";
+  };
 
   // Options for one seat: every player not already picked elsewhere, plus Guest.
   // The roster itself is managed by admins, not from here.
@@ -82,10 +88,11 @@ export function NewGame() {
       { value: guestId(index), label: "Guest (not recorded)" },
     ];
   }
-  // Taker and partner must be registered — a guest can only defend.
-  const seatedOptions = chosen
-    .filter((id) => !isGuest(id))
-    .map((id) => ({ value: id, label: nameOf(id) }));
+  // Anyone seated can take or be called, guests included — their share just
+  // goes unrecorded.
+  const seatedOptions = chosen.map((id) => ({ value: id, label: nameOf(id) }));
+  // A deal with no members would record nothing at all.
+  const hasMember = chosen.some((id) => !isGuest(id));
 
   // Build a GameInput and score it live. Any inconsistency (unfilled slot, bad
   // partner…) surfaces as `null` so the preview and Save button stay disabled.
@@ -121,7 +128,10 @@ export function NewGame() {
     }
   }, [input]);
 
+  // Preview still scores an all-guest table (the maths is fine); it just can't
+  // be saved, since there'd be no score to record for anyone.
   const previewOk = preview && !("error" in preview);
+  const canSave = Boolean(previewOk && hasMember);
 
   async function save() {
     if (!input) return;
@@ -358,11 +368,17 @@ export function NewGame() {
         </Card>
       )}
 
+      {previewOk && !hasMember && (
+        <Alert kind="danger">
+          Everyone at this table is a guest, so there would be nothing to record. Seat at
+          least one member.
+        </Alert>
+      )}
       {error && <Alert kind="danger">{error}</Alert>}
       {saved && <Alert kind="success">{saved}</Alert>}
 
       <div className="row" style={{ justifyContent: "flex-end" }}>
-        <Button variant="primary" onClick={save} disabled={!previewOk} loading={saving}>
+        <Button variant="primary" onClick={save} disabled={!canSave} loading={saving}>
           Save game
         </Button>
       </div>

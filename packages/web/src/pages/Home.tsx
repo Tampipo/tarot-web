@@ -51,7 +51,12 @@ export function Home() {
 }
 
 export function GameRow({ game }: { game: GameDTO }) {
-  const takerScore = game.players.find((p) => p.id === game.taker.id)?.score ?? 0;
+  // A null taker/partner means a guest held that role.
+  const takerName = game.taker?.name ?? "Guest";
+  const partnerName = game.selfCalled ? null : (game.partner?.name ?? "Guest");
+  // Guests leave no score row, so fall back to the deal's value to the attack.
+  const takerRow = game.taker && game.players.find((p) => p.id === game.taker!.id);
+  const headline = takerRow ? takerRow.score : game.baseScore;
   return (
     <div
       className="row"
@@ -65,8 +70,8 @@ export function GameRow({ game }: { game: GameDTO }) {
     >
       <div style={{ minWidth: 0 }}>
         <div style={{ fontWeight: 600 }}>
-          {game.taker.name}
-          {game.partner ? ` & ${game.partner.name}` : ""}
+          {takerName}
+          {partnerName ? ` & ${partnerName}` : ""}
           <span className="muted" style={{ fontWeight: 400 }}>
             {" "}
             · {CONTRACT_LABEL[game.contract as Contract] ?? game.contract}
@@ -78,9 +83,13 @@ export function GameRow({ game }: { game: GameDTO }) {
         </div>
       </div>
       <div className="row" style={{ gap: 10 }}>
-        <span className={`badge ${game.won ? "" : ""}`}>{game.won ? "Won" : "Lost"}</span>
-        <span className={scoreClass(takerScore)} style={{ minWidth: 48, textAlign: "right" }}>
-          {signed(takerScore)}
+        <span className="badge">{game.won ? "Won" : "Lost"}</span>
+        <span
+          className={scoreClass(headline)}
+          style={{ minWidth: 48, textAlign: "right" }}
+          title={takerRow ? "Taker's score" : "Deal value to the attack (a guest took)"}
+        >
+          {signed(headline)}
         </span>
       </div>
     </div>

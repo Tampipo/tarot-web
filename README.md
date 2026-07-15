@@ -44,12 +44,17 @@ seatable by registering an account and having an admin approve it, and each
 account carries a role (`admin` / `member`). That's also what makes "your
 statistics" answerable: the Stats page opens on *you*.
 
-Any seat can instead be filled by a **Guest**. A guest counts for the scoring
-maths — table size and the zero-sum split are computed with them — but nothing
-about them is stored: no `GamePlayer` row, so they never appear on a
-leaderboard. The taker and partner must be members, since the game record keys
-off them via FKs; a guest can only defend. Because guest scores aren't recorded,
-leaderboard totals only sum to zero for games played entirely by members.
+Any seat can instead be filled by a **Guest**, in any role — a guest may take or
+be called as partner. A guest counts for the scoring maths (table size and the
+zero-sum split are computed with them) but nothing about them is stored: no
+`GamePlayer` row, so they never reach a leaderboard, and `Game.takerId` /
+`partnerId` are simply null (`selfCalled` is what tells "taker played alone"
+apart from "the partner was a guest").
+
+So the *recorded* scores of a deal involving guests do **not** sum to zero — the
+guest's share is deliberately dropped. Only all-member deals balance. The one
+thing rejected is a table of nothing but guests, which would record nothing at
+all.
 
 An account that has played can't be deleted (it would tear holes in past
 leaderboards) — demote it instead.
