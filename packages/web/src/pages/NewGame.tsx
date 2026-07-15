@@ -10,7 +10,6 @@ import {
   type Poignee,
   type Side,
 } from "@tarot/shared";
-import { Link } from "react-router-dom";
 import { api, errorMessage } from "../lib/api";
 import { Alert, Button, Card, Field, Input, Select, SideToggle, Spinner } from "../components/ui";
 import { scoreClass, signed } from "../lib/format";
@@ -29,6 +28,9 @@ const GUEST_PREFIX = "guest:";
 const isGuest = (id: string) => id.startsWith(GUEST_PREFIX);
 const guestId = (seat: number) => `${GUEST_PREFIX}${seat}`;
 
+// Sentinel option: opens the inline "register a player" input for that seat.
+const NEW_PLAYER = "__new__";
+
 export function NewGame() {
   const [players, setPlayers] = useState<Player[] | null>(null); // null = loading
   const [numPlayers, setNumPlayers] = useState(4);
@@ -41,12 +43,15 @@ export function NewGame() {
   const [pointsMade, setPointsMade] = useState("");
   const [petitAuBout, setPetitAuBout] = useState<Side>("none");
   const [poignee, setPoignee] = useState<Poignee>("none");
-  const [poigneeSide, setPoigneeSide] = useState<Side>("none");
   const [misere, setMisere] = useState<Side>("none");
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Seat currently showing the inline "new player" input, if any.
+  const [addingSeat, setAddingSeat] = useState<number | null>(null);
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     api.get<Player[]>("/players").then((r) => setPlayers(r.data));
@@ -71,14 +76,35 @@ export function NewGame() {
   const chosen = slots.filter(Boolean);
   const usePartner = numPlayers === 5 && !alone;
 
-  // Options for one seat: every player not already picked elsewhere, plus Guest.
+  // Options for one seat: every player not already picked elsewhere, plus Guest
+  // and an inline "register someone new" escape hatch.
   function slotOptions(index: number) {
     return [
       ...(players ?? [])
         .filter((p) => !slots.some((s, i) => i !== index && s === p.id))
         .map((p) => ({ value: p.id, label: p.name })),
       { value: guestId(index), label: "Guest (not recorded)" },
+      { value: NEW_PLAYER, label: "+ New player…" },
     ];
+  }
+
+  /** Register a player from the seat dropdown and sit them straight down. */
+  async function createPlayer(seat: number) {
+    const name = newName.trim();
+    if (!name) return;
+    setError(null);
+    setCreating(true);
+    try {
+      const { data } = await api.post<Player>("/players", { name });
+      setPlayers((prev) => [...(prev ?? []), data].sort((a, b) => a.name.localeCompare(b.name)));
+      setSlots((prev) => prev.map((s, i) => (i === seat ? data.id : s)));
+      setAddingSeat(null);
+      setNewName("");
+    } catch (err) {
+      setError(errorMessage(err, "Could not add that player"));
+    } finally {
+      setCreating(false);
+    }
   }
   // Taker and partner must be registered — a guest can only defend.
   const seatedOptions = chosen
@@ -94,7 +120,6 @@ export function NewGame() {
     if (usePartner && (!partnerId || partnerId === takerId)) return null;
     if (!contract) return null;
     if (oudlers === "" || pointsMade === "") return null;
-    if (poignee !== "none" && poigneeSide === "none") return null;
     return {
       playerIds: chosen,
       takerId,
@@ -104,12 +129,11 @@ export function NewGame() {
       pointsMade: Number(pointsMade),
       petitAuBout,
       poignee,
-      poigneeSide: poignee === "none" ? "none" : poigneeSide,
       misere,
     };
   }, [
     chosen, numPlayers, takerId, usePartner, partnerId, contract, oudlers,
-    pointsMade, petitAuBout, poignee, poigneeSide, misere,
+    pointsMade, petitAuBout, poignee, misere,
   ]);
 
   const preview = useMemo(() => {
@@ -142,7 +166,6 @@ export function NewGame() {
       setPointsMade("");
       setPetitAuBout("none");
       setPoignee("none");
-      setPoigneeSide("none");
       setMisere("none");
       setAlone(false);
     } catch (err) {
@@ -152,20 +175,8 @@ export function NewGame() {
     }
   }
 
+  // An empty roster is fine: "+ New player…" in any seat registers someone.
   if (players === null) return <Spinner />;
-
-  // Guests can fill any defending seat, but the taker must be registered — so
-  // one real player is the minimum to score anything.
-  if (players.length === 0) {
-    return (
-      <Card title="New game">
-        <div className="empty">
-          No players yet. <Link to="/players" style={{ color: "var(--primary)" }}>Add a player</Link>{" "}
-          first — the taker has to be a registered player. Everyone else can sit in as a guest.
-        </div>
-      </Card>
-    );
-  }
 
   return (
     <div className="stack">
@@ -192,18 +203,66 @@ export function NewGame() {
           <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
             {slots.map((val, i) => (
               <Field key={i} label={`Seat ${i + 1}`}>
-                <Select
-                  placeholder="Select player"
-                  value={val}
-                  options={slotOptions(i)}
-                  onChange={(e) => {
-                    const next = [...slots];
-                    next[i] = e.target.value;
-                    setSlots(next);
-                    if (takerId === val) setTakerId("");
-                    if (partnerId === val) setPartnerId("");
-                  }}
-                />
+                {addingSeat === i ? (
+                  // Inline registration: type a name, and they sit down here.
+                  <div className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
+                    <Input
+                      autoFocus
+                      value={newName}
+                      maxLength={40}
+                      placeholder="New player's name"
+                      onChange={(e) => setNewName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          createPlayer(i);
+                        }
+                        if (e.key === "Escape") {
+                          setAddingSeat(null);
+                          setNewName("");
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="primary"
+                      className="btn-sm"
+                      loading={creating}
+                      onClick={() => createPlayer(i)}
+                    >
+                      Add
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="btn-sm"
+                      onClick={() => {
+                        setAddingSeat(null);
+                        setNewName("");
+                      }}
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                ) : (
+                  <Select
+                    placeholder="Select player"
+                    value={val}
+                    options={slotOptions(i)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === NEW_PLAYER) {
+                        setNewName("");
+                        setAddingSeat(i);
+                        return;
+                      }
+                      const next = [...slots];
+                      next[i] = v;
+                      setSlots(next);
+                      // Whoever left this seat can no longer hold a role.
+                      if (takerId === val) setTakerId("");
+                      if (partnerId === val) setPartnerId("");
+                    }}
+                  />
+                )}
               </Field>
             ))}
           </div>
@@ -286,23 +345,14 @@ export function NewGame() {
             <Field label="Misère">
               <SideToggle value={misere} onChange={setMisere} />
             </Field>
+            {/* Size only — the bonus goes to whichever camp wins the deal. */}
             <Field label="Poignée">
               <Select
                 value={poignee}
                 options={POIGNEE_OPTIONS}
-                onChange={(e) => {
-                  const v = e.target.value as Poignee;
-                  setPoignee(v);
-                  if (v === "none") setPoigneeSide("none");
-                  else if (poigneeSide === "none") setPoigneeSide("attack");
-                }}
+                onChange={(e) => setPoignee(e.target.value as Poignee)}
               />
             </Field>
-            {poignee !== "none" && (
-              <Field label="Poignée camp">
-                <SideToggle value={poigneeSide} onChange={setPoigneeSide} />
-              </Field>
-            )}
           </div>
         </div>
       </Card>

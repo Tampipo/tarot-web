@@ -23,7 +23,6 @@ const createGameSchema = z.object({
   pointsMade: z.number().int().min(0).max(91),
   petitAuBout: sideSchema.default("none"),
   poignee: z.enum(["none", "simple", "double", "triple"]).default("none"),
-  poigneeSide: sideSchema.default("none"),
   misere: sideSchema.default("none"),
 });
 
@@ -47,7 +46,6 @@ function serializeGame(g: NonNullable<GameWithRelations>) {
     selfCalled: g.selfCalled,
     petitAuBout: g.petitAuBout,
     poignee: g.poignee,
-    poigneeSide: g.poigneeSide,
     misere: g.misere,
     baseScore: g.baseScore,
     won: g.baseScore >= 0,
@@ -101,7 +99,6 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
         selfCalled: body.partnerId === null,
         petitAuBout: body.petitAuBout,
         poignee: body.poignee,
-        poigneeSide: body.poigneeSide,
         misere: body.misere,
         baseScore: result.baseScore,
         takerId: body.takerId,

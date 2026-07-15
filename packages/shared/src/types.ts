@@ -21,13 +21,17 @@ export const CONTRACT_LABEL: Record<Contract, string> = {
 /**
  * A bonus that belongs to one camp. `attack` = the taker's team scored it,
  * `defense` = the defenders scored it, `none` = not in play. Kept as an enum
- * (rather than a bare boolean) because petit-au-bout and the poignée can be
- * won by *either* side, which flips the sign of their contribution.
+ * (rather than a bare boolean) because petit-au-bout can be won by *either*
+ * side, which flips the sign of its contribution.
  */
 export type Side = "none" | "attack" | "defense";
 export const SIDE_SIGN: Record<Side, number> = { none: 0, attack: 1, defense: -1 };
 
-/** Poignée (a declared handful of trumps) — three sizes, mutually exclusive. */
+/**
+ * Poignée (a declared handful of trumps) — three sizes, mutually exclusive.
+ * Per the official rules the bonus is awarded to whichever camp *wins the
+ * deal*, no matter who declared it, so it carries no camp of its own.
+ */
 export type Poignee = "none" | "simple" | "double" | "triple";
 export const POIGNEE_VALUE: Record<Poignee, number> = {
   none: 0,
@@ -58,7 +62,6 @@ export interface GameInput {
   pointsMade: number;
   petitAuBout: Side;
   poignee: Poignee;
-  poigneeSide: Side;
   /** House-rule "misère" bonus, ±10 × multiplier, awarded to either camp. */
   misere: Side;
 }

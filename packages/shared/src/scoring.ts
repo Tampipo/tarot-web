@@ -42,9 +42,6 @@ export function validateGame(input: GameInput): void {
   if (!Number.isInteger(input.pointsMade) || input.pointsMade < 0 || input.pointsMade > 91) {
     throw new ScoringError("Card points must be an integer between 0 and 91.");
   }
-  if (input.poignee !== "none" && input.poigneeSide === "none") {
-    throw new ScoringError("A poignée must be attributed to a camp.");
-  }
 }
 
 /**
@@ -57,10 +54,11 @@ export function validateGame(input: GameInput): void {
  *          + misère · 10 · multiplier                              (house rule)
  *          + poignée·value                                          (flat, un-multiplied)
  *
- * where `sign` is +1 when the attack reaches its point target and −1 otherwise,
- * and each bonus term carries the sign of the camp that earned it (+attack /
- * −defense). Petit-au-bout and the misère follow the contract multiplier; the
- * poignée is a flat bonus, exactly as in the standard rules.
+ * where `sign` is +1 when the attack reaches its point target and −1 otherwise.
+ * Petit-au-bout and the misère carry the sign of the camp that earned them
+ * (+attack / −defense) and follow the contract multiplier. The poignée is a
+ * flat, un-multiplied bonus awarded to whichever camp *wins the deal* — so it
+ * takes the contract's own sign, regardless of who declared it.
  *
  * The base is then split zero-sum across the table:
  *   • 3 players  → taker ±2·base, each of 2 defenders ∓base
@@ -80,9 +78,13 @@ export function scoreGame(input: GameInput): GameResult {
 
   const contractSign = won ? 1 : -1;
   const contract = contractSign * (25 + Math.abs(input.pointsMade - target)) * multiplier;
+  // Petit-au-bout is a term of its own, signed by whoever won the last trick —
+  // NOT folded into the contract before it is negated. Failing by 5 while
+  // taking the petit is −30·m + 10·m, not −(25+5+10)·m.
   const petit = SIDE_SIGN[input.petitAuBout] * 10 * multiplier;
   const misere = SIDE_SIGN[input.misere] * 10 * multiplier;
-  const poignee = SIDE_SIGN[input.poigneeSide] * POIGNEE_VALUE[input.poignee];
+  // The poignée always goes to the camp that wins the deal, whoever declared it.
+  const poignee = contractSign * POIGNEE_VALUE[input.poignee];
 
   const base = contract + petit + misere + poignee;
 

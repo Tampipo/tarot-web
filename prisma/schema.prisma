@@ -53,8 +53,8 @@ model Game {
   numPlayers  Int
   selfCalled  Boolean // taker played alone (no partner)
   petitAuBout String   @default("none") // none | attack | defense
+  // Size only: the bonus always goes to whichever camp won the deal.
   poignee     String   @default("none") // none | simple | double | triple
-  poigneeSide String   @default("none") // none | attack | defense
   misere      String   @default("none") // none | attack | defense
   baseScore   Int
 

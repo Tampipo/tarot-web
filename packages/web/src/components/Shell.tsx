@@ -8,7 +8,6 @@ const LINKS = [
   { to: "/new", label: "New game", end: false, adminOnly: false },
   { to: "/scoreboard", label: "Scoreboard", end: false, adminOnly: false },
   { to: "/stats", label: "Stats", end: false, adminOnly: false },
-  { to: "/players", label: "Players", end: false, adminOnly: false },
   { to: "/admin", label: "Admin", end: false, adminOnly: true },
 ];
 

@@ -21,8 +21,14 @@ It computes a deal's value to the attack:
 base = sign·(25 + |pointsMade − target|)·multiplier   (contract; sign = won ? +1 : −1)
      + petitAuBout·10·multiplier
      + misère·10·multiplier
-     + poignée·value                                    (flat: 20 / 30 / 40)
+     + poignée·value·sign                               (flat: 20 / 30 / 40)
 ```
+
+`petitAuBout` and `misère` carry the sign of the camp that earned them, and are
+separate terms — *not* folded into the contract before it is negated (failing by
+5 while taking the petit is `−30·m + 10·m`, not `−40·m`). The poignée is flat and
+always goes to whichever camp **wins the deal**, whoever declared it, so it takes
+the contract's own sign.
 
 then splits it **zero-sum** across the table (3, 4 or 5 players, with or without
 a called partner). Per-player results are stored in `GamePlayer`; every
@@ -33,13 +39,19 @@ Run the tests: `npm test`.
 
 ## Players and guests
 
-The roster starts empty — add players on the Players page. Any seat can instead
-be filled by a **Guest**: they count for the scoring maths (table size and the
-zero-sum split are computed with them), but nothing about them is stored — no
-`GamePlayer` row, so they never appear on a leaderboard. The taker and partner
-must be registered players, since the game record keys off them; a guest can
-only defend. Because guest scores aren't recorded, the leaderboard totals only
-sum to zero for games played entirely by registered players.
+The roster starts empty. Players are registered straight from the New game
+screen: every seat dropdown lists the existing players plus **+ New player…**
+(type a name and they sit down) and **Guest**.
+
+A guest counts for the scoring maths — table size and the zero-sum split are
+computed with them — but nothing about them is stored: no `GamePlayer` row, so
+they never appear on a leaderboard. The taker and partner must be registered
+players, since the game record keys off them via FKs; a guest can only defend.
+Because guest scores aren't recorded, leaderboard totals only sum to zero for
+games played entirely by registered players.
+
+Not standard FFT, for the record: **misère** (±10 × multiplier) is a house rule
+carried over from the old app, and **chelem** isn't implemented.
 
 ## Auth
 

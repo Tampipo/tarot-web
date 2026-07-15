@@ -23,7 +23,6 @@ export interface GameDTO {
   selfCalled: boolean;
   petitAuBout: string;
   poignee: string;
-  poigneeSide: string;
   misere: string;
   baseScore: number;
   won: boolean;

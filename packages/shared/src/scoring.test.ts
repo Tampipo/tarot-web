@@ -13,7 +13,6 @@ function base4(overrides: Partial<GameInput> = {}): GameInput {
     pointsMade: 51, // écart +10
     petitAuBout: "none",
     poignee: "none",
-    poigneeSide: "none",
     misere: "none",
     ...overrides,
   };
@@ -55,10 +54,27 @@ describe("scoreGame — bonuses", () => {
     expect(scoreGame(base4({ petitAuBout: "defense" })).baseScore).toBe(70 - 20);
   });
   it("poignée is a flat bonus, not multiplied", () => {
-    expect(scoreGame(base4({ poignee: "double", poigneeSide: "attack" })).baseScore).toBe(70 + 30);
+    expect(scoreGame(base4({ poignee: "double" })).baseScore).toBe(70 + 30);
   });
+
+  // Official rule: the poignée goes to whoever WINS the deal, whoever declared
+  // it — so on a failed contract it deepens the attack's loss.
+  it("poignée follows the winner of the deal, not the declarer", () => {
+    const lost = scoreGame(base4({ poignee: "simple", pointsMade: 31 })); // fails by 10
+    expect(lost.won).toBe(false);
+    expect(lost.baseScore).toBe(-(25 + 10) * 2 - 20);
+  });
+
   it("misère follows the multiplier", () => {
     expect(scoreGame(base4({ misere: "defense" })).baseScore).toBe(70 - 20);
+  });
+
+  // A classic mis-implementation: folding petit-au-bout into the negated
+  // contract. Failing by 5 while taking the petit is −30·m + 10·m, not −40·m.
+  it("petit au bout is a separate term on a failed contract", () => {
+    const r = scoreGame(base4({ pointsMade: 36, petitAuBout: "attack" })); // target 41
+    expect(r.won).toBe(false);
+    expect(r.baseScore).toBe(-(25 + 5) * 2 + 10 * 2);
   });
 });
 
@@ -115,10 +131,5 @@ describe("validateGame", () => {
   });
   it("rejects out-of-range card points", () => {
     expect(() => validateGame(base4({ pointsMade: 92 }))).toThrow(ScoringError);
-  });
-  it("rejects a poignée with no camp", () => {
-    expect(() => validateGame(base4({ poignee: "simple", poigneeSide: "none" }))).toThrow(
-      ScoringError,
-    );
   });
 });
