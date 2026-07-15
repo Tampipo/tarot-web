@@ -41,14 +41,9 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       PORT: ${PORT:-3000}
       NODE_ENV: ${NODE_ENV:-production}
-      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:8080/api}
-      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8080}
-      AUTH_MODE: ${AUTH_MODE:-both}
       ALLOW_SIGNUP: ${ALLOW_SIGNUP:-true}
-      OIDC_ISSUER: ${OIDC_ISSUER:-}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
-      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
-      OIDC_SCOPES: ${OIDC_SCOPES:-openid profile email}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -62,7 +57,8 @@ services:
       # nginx proxies /api/* to the compose api service.
       API_UPSTREAM: api:3000
     ports:
-      - "8080:80"
+      # Host port is configurable so the stack can coexist with others.
+      - "${WEB_PORT:-8080}:80"
     depends_on:
       - api
     restart: unless-stopped

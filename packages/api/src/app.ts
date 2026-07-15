@@ -8,7 +8,7 @@ import { env } from "./env";
 import { prisma } from "./prisma";
 import { SESSION_COOKIE } from "./lib/session";
 import { authRoutes } from "./routes/auth";
-import { oidcRoutes } from "./routes/oidc";
+import { adminRoutes } from "./routes/admin";
 import { playerRoutes } from "./routes/players";
 import { gameRoutes } from "./routes/games";
 import { scoreboardRoutes } from "./routes/scoreboard";
@@ -52,7 +52,7 @@ export async function buildApp(opts: { logger?: boolean } = {}) {
   });
 
   await app.register(authRoutes);
-  await app.register(oidcRoutes);
+  await app.register(adminRoutes);
   await app.register(playerRoutes);
   await app.register(gameRoutes);
   await app.register(scoreboardRoutes);

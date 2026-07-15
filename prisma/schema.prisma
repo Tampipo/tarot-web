@@ -9,14 +9,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// An authenticated account. Either a local password login (passwordHash set) or
-// a federated identity (oidcSub set) — never invented, never both required.
+// An authenticated account (email + password).
+//   role   — "admin" | "member". Admins approve registrations and manage users.
+//   status — "pending" | "active". New sign-ups start pending and cannot log in
+//            until an admin approves them (keeps strangers out).
+// The bootstrap admin (from ADMIN_EMAIL/ADMIN_PASSWORD) is created active.
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
   name         String
-  passwordHash String? // null for OIDC-only accounts
-  oidcSub      String?  @unique // subject claim from the IdP
+  passwordHash String
+  role         String   @default("member")
+  status       String   @default("pending")
   createdAt    DateTime @default(now())
 
   createdGames Game[] @relation("createdBy")
@@ -57,7 +61,8 @@ model Game {
   partner     Player? @relation("partner", fields: [partnerId], references: [id])
 
   createdById String?
-  createdBy   User?   @relation("createdBy", fields: [createdById], references: [id])
+  // Keep the game if its author is later deleted — history outlives accounts.
+  createdBy   User?   @relation("createdBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   players GamePlayer[]
 

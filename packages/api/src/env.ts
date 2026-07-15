@@ -11,34 +11,15 @@ const schema = z.object({
   PORT: z.coerce.number().default(3000),
   NODE_ENV: z.string().default("development"),
 
-  // Browser-facing base URL of THIS api. The OIDC redirect_uri is
-  // `${API_PUBLIC_URL}/auth/oidc/callback`, so it points at where nginx exposes
-  // the api (e.g. http://localhost:8080/api).
-  API_PUBLIC_URL: z.string().default("http://localhost:8080/api"),
-  // Where to bounce the browser after a successful login / SSO.
-  WEB_ORIGIN: z.string().default("http://localhost:8080"),
-
-  AUTH_MODE: z.enum(["local", "oidc", "both"]).default("both"),
+  // Registration is open by default; set false to freeze sign-ups entirely.
   ALLOW_SIGNUP: boolString("true"),
 
-  OIDC_ISSUER: z.string().optional(),
-  OIDC_CLIENT_ID: z.string().optional(),
-  OIDC_CLIENT_SECRET: z.string().optional(),
-  OIDC_SCOPES: z.string().default("openid profile email"),
+  // Bootstrap admin. On startup, if no admin exists yet, one is created from
+  // these credentials (see lib/bootstrap). Optional so you can run without it
+  // once a real admin has been promoted.
+  ADMIN_EMAIL: z.string().email().optional(),
+  ADMIN_PASSWORD: z.string().min(8, "ADMIN_PASSWORD must be at least 8 chars").optional(),
 });
 
 export const env = schema.parse(process.env);
 export const isProd = env.NODE_ENV === "production";
-
-// Password login is available unless the deployment is OIDC-only.
-export const localEnabled = env.AUTH_MODE !== "oidc";
-
-// SSO is available only when it is turned on AND fully configured — a half-set
-// OIDC block silently stays off rather than crashing at first login.
-export const oidcEnabled =
-  env.AUTH_MODE !== "local" &&
-  Boolean(env.OIDC_ISSUER && env.OIDC_CLIENT_ID && env.OIDC_CLIENT_SECRET);
-
-if (env.AUTH_MODE === "oidc" && !oidcEnabled) {
-  throw new Error("AUTH_MODE=oidc but OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET are incomplete.");
-}

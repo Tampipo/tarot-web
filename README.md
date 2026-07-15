@@ -8,7 +8,7 @@ Full TypeScript, Docker-first. Built as an npm-workspace monorepo:
 | Package           | What it is                                                            |
 | ----------------- | --------------------------------------------------------------------- |
 | `packages/shared` | Pure, unit-tested tarot **scoring engine** + shared types.            |
-| `packages/api`    | **Fastify + Prisma** REST API. Cookie sessions, Postgres or OIDC auth. |
+| `packages/api`    | **Fastify + Prisma** REST API. Cookie sessions, approval-gated auth.  |
 | `packages/web`    | **Vite + React** SPA with a small hand-rolled design system.          |
 
 ## Scoring
@@ -33,10 +33,24 @@ Run the tests: `npm test`.
 
 ## Auth
 
-Set `AUTH_MODE` to `local` (email + password in Postgres), `oidc` (SSO only), or
-`both`. OIDC turns on automatically once `OIDC_ISSUER` / `OIDC_CLIENT_ID` /
-`OIDC_CLIENT_SECRET` are set. The login screen renders only the enabled methods.
-Sessions are a signed JWT in an httpOnly cookie.
+Email + password, stored in Postgres. Sessions are a signed JWT in an httpOnly
+cookie; role and status are re-read from the DB on every request, so a change
+takes effect on the account's next call.
+
+Registration is **approval-gated**:
+
+- A bootstrap **admin** is created on first start from `ADMIN_EMAIL` /
+  `ADMIN_PASSWORD` (only while no admin exists yet).
+- New sign-ups land in a **pending** state and cannot log in until an admin
+  **approves** them — this keeps strangers out.
+- An admin can **promote** a member to admin, **demote**, and **delete**
+  accounts. The app refuses any action that would leave zero admins.
+- Recommended flow: log in as the bootstrap admin → approve + promote your real
+  account → delete the bootstrap admin. It won't be recreated while another
+  admin exists (but it *will* respawn as a break-glass if every admin is
+  removed).
+
+Set `ALLOW_SIGNUP=false` to freeze registration entirely.
 
 ## Run it locally (Docker)
 
@@ -75,5 +89,5 @@ the images onto k3s is handled outside this repo.
 ## Environment
 
 See [`.env.example`](.env.example). Key variables: `DATABASE_URL`,
-`SESSION_SECRET`, `AUTH_MODE`, `ALLOW_SIGNUP`, `API_PUBLIC_URL`, `WEB_ORIGIN`,
-and the `OIDC_*` block.
+`SESSION_SECRET`, `ALLOW_SIGNUP`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and
+`WEB_PORT` (docker-compose host port).

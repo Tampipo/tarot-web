@@ -4,11 +4,12 @@ import { useAuth } from "../contexts/auth";
 import { Button } from "./ui";
 
 const LINKS = [
-  { to: "/", label: "Home", end: true },
-  { to: "/new", label: "New game", end: false },
-  { to: "/scoreboard", label: "Scoreboard", end: false },
-  { to: "/stats", label: "Stats", end: false },
-  { to: "/players", label: "Players", end: false },
+  { to: "/", label: "Home", end: true, adminOnly: false },
+  { to: "/new", label: "New game", end: false, adminOnly: false },
+  { to: "/scoreboard", label: "Scoreboard", end: false, adminOnly: false },
+  { to: "/stats", label: "Stats", end: false, adminOnly: false },
+  { to: "/players", label: "Players", end: false, adminOnly: false },
+  { to: "/admin", label: "Admin", end: false, adminOnly: true },
 ];
 
 function ThemeToggle() {
@@ -33,7 +34,8 @@ function ThemeToggle() {
 }
 
 export function Shell() {
-  const { user, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
+  const links = LINKS.filter((l) => !l.adminOnly || isAdmin);
   return (
     <div className="app">
       <header className="nav">
@@ -43,7 +45,7 @@ export function Shell() {
             <span>Tarot</span>
           </div>
           <nav className="nav-links">
-            {LINKS.map((l) => (
+            {links.map((l) => (
               <NavLink
                 key={l.to}
                 to={l.to}

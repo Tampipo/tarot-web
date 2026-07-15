@@ -1,15 +1,18 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
+import { prisma } from "../prisma";
 import { isProd } from "../env";
 
 export const SESSION_COOKIE = "tarot_session";
 export const SESSION_TTL_S = 7 * 24 * 60 * 60; // 7 days
 
-/** What we sign into the session cookie and hang on `request.authUser`. */
+/** The current principal, resolved fresh from the DB on every request. */
 export interface SessionUser {
   id: string;
   email: string;
   name: string;
+  role: string; // "admin" | "member"
+  status: string; // "active" | "pending"
 }
 
 // `request.user` is owned by @fastify/jwt (the raw verified payload); we expose
@@ -22,21 +25,16 @@ declare module "fastify" {
 
 declare module "@fastify/jwt" {
   interface FastifyJWT {
-    payload: { sub: string; email: string; name: string };
-    user: { sub: string; email: string; name: string };
+    payload: { sub: string };
+    user: { sub: string };
   }
 }
 
 /** Set the httpOnly session cookie holding a signed JWT for `user`. */
-export function setSessionCookie(
-  reply: FastifyReply,
-  token: string,
-): void {
+export function setSessionCookie(reply: FastifyReply, token: string): void {
   reply.setCookie(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: isProd,
-    // `lax` still sends the cookie on the top-level GET redirect back from the
-    // IdP, so the SSO round-trip keeps working.
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_TTL_S,
@@ -48,18 +46,42 @@ export function clearSessionCookie(reply: FastifyReply): void {
 }
 
 /**
- * preHandler: require a valid session. Reads the JWT from the cookie (configured
- * on the @fastify/jwt plugin), populates `request.authUser`, else 401s.
+ * preHandler: require a valid session AND an active account. The JWT only
+ * carries the user id, so role/status are read live — an account that gets
+ * deactivated or deleted loses access on its very next request.
  */
 export async function requireAuth(
   req: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
+  let sub: string;
   try {
-    const payload = await req.jwtVerify<{ sub: string; email: string; name: string }>();
-    req.authUser = { id: payload.sub, email: payload.email, name: payload.name };
+    ({ sub } = await req.jwtVerify<{ sub: string }>());
   } catch {
     return reply.code(401).send({ error: "UNAUTHORIZED" });
+  }
+  const user = await prisma.user.findUnique({ where: { id: sub } });
+  if (!user || user.status !== "active") {
+    return reply.code(401).send({ error: "UNAUTHORIZED" });
+  }
+  req.authUser = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    status: user.status,
+  };
+}
+
+/** preHandler: 403 unless the (already-authenticated) caller is an admin. */
+export async function requireAdmin(
+  req: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  await requireAuth(req, reply);
+  if (reply.sent) return;
+  if (req.authUser?.role !== "admin") {
+    return reply.code(403).send({ error: "FORBIDDEN" });
   }
 }
 
@@ -67,12 +89,9 @@ export async function requireAuth(
 export function issueSession(
   app: FastifyInstance,
   reply: FastifyReply,
-  user: SessionUser,
+  user: { id: string },
 ): void {
-  const token = app.jwt.sign(
-    { sub: user.id, email: user.email, name: user.name },
-    { expiresIn: SESSION_TTL_S },
-  );
+  const token = app.jwt.sign({ sub: user.id }, { expiresIn: SESSION_TTL_S });
   setSessionCookie(reply, token);
 }
 

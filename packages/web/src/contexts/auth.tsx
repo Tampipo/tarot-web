@@ -5,11 +5,11 @@ export interface User {
   id: string;
   email: string;
   name: string;
+  role: string; // "admin" | "member"
+  status: string; // "active" | "pending"
 }
 
 export interface AuthConfig {
-  local: boolean;
-  oidc: boolean;
   allowSignup: boolean;
 }
 
@@ -17,7 +17,9 @@ interface AuthState {
   user: User | null;
   config: AuthConfig | null;
   loading: boolean;
+  isAdmin: boolean;
   login: (email: string, password: string) => Promise<void>;
+  /** Registers a pending account. Resolves without a session — approval needed. */
   signup: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -30,7 +32,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load available methods + restore the session (if the cookie is still good).
     Promise.all([
       api.get<AuthConfig>("/auth/config").then((r) => setConfig(r.data)),
       api
@@ -46,8 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signup(name: string, email: string, password: string) {
-    const { data } = await api.post<User>("/auth/signup", { name, email, password });
-    setUser(data);
+    // 202 pending — no session is issued; the user waits for admin approval.
+    await api.post("/auth/signup", { name, email, password });
   }
 
   async function logout() {
@@ -56,7 +57,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, config, loading, login, signup, logout }}>
+    <AuthContext.Provider
+      value={{ user, config, loading, isAdmin: user?.role === "admin", login, signup, logout }}
+    >
       {children}
     </AuthContext.Provider>
   );

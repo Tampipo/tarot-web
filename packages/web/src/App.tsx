@@ -8,6 +8,7 @@ import { NewGame } from "./pages/NewGame";
 import { Scoreboard } from "./pages/Scoreboard";
 import { Stats } from "./pages/Stats";
 import { Players } from "./pages/Players";
+import { Admin } from "./pages/Admin";
 
 function Protected() {
   const { user, loading } = useAuth();
@@ -16,7 +17,7 @@ function Protected() {
 }
 
 function AppRoutes() {
-  const { user, loading } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   return (
     <Routes>
       <Route
@@ -29,6 +30,8 @@ function AppRoutes() {
         <Route path="/scoreboard" element={<Scoreboard />} />
         <Route path="/stats" element={<Stats />} />
         <Route path="/players" element={<Players />} />
+        {/* Admin-only; non-admins bounce home. */}
+        <Route path="/admin" element={isAdmin ? <Admin /> : <Navigate to="/" replace />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

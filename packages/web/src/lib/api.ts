@@ -17,3 +17,11 @@ export function errorMessage(err: unknown, fallback = "Something went wrong"): s
   }
   return fallback;
 }
+
+/** The API's machine-readable `error` code (e.g. "PENDING_APPROVAL"), if any. */
+export function errorCode(err: unknown): string | null {
+  if (axios.isAxiosError(err)) {
+    return (err.response?.data as { error?: string } | undefined)?.error ?? null;
+  }
+  return null;
+}
