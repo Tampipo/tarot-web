@@ -10,7 +10,9 @@ import {
   type Poignee,
   type Side,
 } from "@tarot/shared";
+import { Link } from "react-router-dom";
 import { api, errorMessage } from "../lib/api";
+import { useAuth } from "../contexts/auth";
 import { Alert, Button, Card, Field, Input, Select, SideToggle, Spinner } from "../components/ui";
 import { scoreClass, signed } from "../lib/format";
 import type { Player } from "../lib/types";
@@ -28,10 +30,8 @@ const GUEST_PREFIX = "guest:";
 const isGuest = (id: string) => id.startsWith(GUEST_PREFIX);
 const guestId = (seat: number) => `${GUEST_PREFIX}${seat}`;
 
-// Sentinel option: opens the inline "register a player" input for that seat.
-const NEW_PLAYER = "__new__";
-
 export function NewGame() {
+  const { isAdmin } = useAuth();
   const [players, setPlayers] = useState<Player[] | null>(null); // null = loading
   const [numPlayers, setNumPlayers] = useState(4);
   const [slots, setSlots] = useState<string[]>(["", "", "", ""]);
@@ -48,10 +48,6 @@ export function NewGame() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Seat currently showing the inline "new player" input, if any.
-  const [addingSeat, setAddingSeat] = useState<number | null>(null);
-  const [newName, setNewName] = useState("");
-  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     api.get<Player[]>("/players").then((r) => setPlayers(r.data));
@@ -76,35 +72,15 @@ export function NewGame() {
   const chosen = slots.filter(Boolean);
   const usePartner = numPlayers === 5 && !alone;
 
-  // Options for one seat: every player not already picked elsewhere, plus Guest
-  // and an inline "register someone new" escape hatch.
+  // Options for one seat: every player not already picked elsewhere, plus Guest.
+  // The roster itself is managed by admins, not from here.
   function slotOptions(index: number) {
     return [
       ...(players ?? [])
         .filter((p) => !slots.some((s, i) => i !== index && s === p.id))
         .map((p) => ({ value: p.id, label: p.name })),
       { value: guestId(index), label: "Guest (not recorded)" },
-      { value: NEW_PLAYER, label: "+ New player…" },
     ];
-  }
-
-  /** Register a player from the seat dropdown and sit them straight down. */
-  async function createPlayer(seat: number) {
-    const name = newName.trim();
-    if (!name) return;
-    setError(null);
-    setCreating(true);
-    try {
-      const { data } = await api.post<Player>("/players", { name });
-      setPlayers((prev) => [...(prev ?? []), data].sort((a, b) => a.name.localeCompare(b.name)));
-      setSlots((prev) => prev.map((s, i) => (i === seat ? data.id : s)));
-      setAddingSeat(null);
-      setNewName("");
-    } catch (err) {
-      setError(errorMessage(err, "Could not add that player"));
-    } finally {
-      setCreating(false);
-    }
   }
   // Taker and partner must be registered — a guest can only defend.
   const seatedOptions = chosen
@@ -175,8 +151,25 @@ export function NewGame() {
     }
   }
 
-  // An empty roster is fine: "+ New player…" in any seat registers someone.
   if (players === null) return <Spinner />;
+
+  // The taker must be a registered player, so an empty roster can't be scored.
+  if (players.length === 0) {
+    return (
+      <Card title="New game">
+        <div className="empty">
+          No players yet — the taker has to be a registered player.{" "}
+          {isAdmin ? (
+            <Link to="/admin" style={{ color: "var(--primary)" }}>
+              Add players on the Admin page
+            </Link>
+          ) : (
+            "Ask an admin to add some."
+          )}
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <div className="stack">
@@ -203,66 +196,19 @@ export function NewGame() {
           <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
             {slots.map((val, i) => (
               <Field key={i} label={`Seat ${i + 1}`}>
-                {addingSeat === i ? (
-                  // Inline registration: type a name, and they sit down here.
-                  <div className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
-                    <Input
-                      autoFocus
-                      value={newName}
-                      maxLength={40}
-                      placeholder="New player's name"
-                      onChange={(e) => setNewName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          createPlayer(i);
-                        }
-                        if (e.key === "Escape") {
-                          setAddingSeat(null);
-                          setNewName("");
-                        }
-                      }}
-                    />
-                    <Button
-                      variant="primary"
-                      className="btn-sm"
-                      loading={creating}
-                      onClick={() => createPlayer(i)}
-                    >
-                      Add
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      className="btn-sm"
-                      onClick={() => {
-                        setAddingSeat(null);
-                        setNewName("");
-                      }}
-                    >
-                      ✕
-                    </Button>
-                  </div>
-                ) : (
-                  <Select
-                    placeholder="Select player"
-                    value={val}
-                    options={slotOptions(i)}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === NEW_PLAYER) {
-                        setNewName("");
-                        setAddingSeat(i);
-                        return;
-                      }
-                      const next = [...slots];
-                      next[i] = v;
-                      setSlots(next);
-                      // Whoever left this seat can no longer hold a role.
-                      if (takerId === val) setTakerId("");
-                      if (partnerId === val) setPartnerId("");
-                    }}
-                  />
-                )}
+                <Select
+                  placeholder="Select player"
+                  value={val}
+                  options={slotOptions(i)}
+                  onChange={(e) => {
+                    const next = [...slots];
+                    next[i] = e.target.value;
+                    setSlots(next);
+                    // Whoever left this seat can no longer hold a role.
+                    if (takerId === val) setTakerId("");
+                    if (partnerId === val) setPartnerId("");
+                  }}
+                />
               </Field>
             ))}
           </div>

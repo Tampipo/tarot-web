@@ -39,9 +39,10 @@ Run the tests: `npm test`.
 
 ## Players and guests
 
-The roster starts empty. Players are registered straight from the New game
-screen: every seat dropdown lists the existing players plus **+ New player…**
-(type a name and they sit down) and **Guest**.
+The roster starts empty. **Admins** manage it from the Players section of the
+Admin page (a player with recorded games can't be deleted — that would tear
+holes in past leaderboards). Everyone signed in can *read* the roster, since
+New game needs it; each seat dropdown lists the existing players plus **Guest**.
 
 A guest counts for the scoring maths — table size and the zero-sum split are
 computed with them — but nothing about them is stored: no `GamePlayer` row, so
