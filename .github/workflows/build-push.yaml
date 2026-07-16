@@ -3,9 +3,12 @@ name: Build and push images
 # Typechecks + runs the scoring tests, then builds the api and web images and
 # pushes them to GHCR. No image is ever built from a commit whose tests fail.
 #
-# Deployment (k3s) is out of scope here — these images are just published to
-# ghcr.io/<owner>/tarot-api and ghcr.io/<owner>/tarot-web. Pulling them onto the
-# cluster is handled elsewhere.
+# The deploy job then writes the new image tag into the tarot-gitops repo, and
+# ArgoCD (no Image Updater) reconciles that commit onto the cluster. So:
+# push to main -> images built -> gitops bumped -> ArgoCD deploys.
+#
+# Requires repo secret GITOPS_TOKEN: a GitHub token with write access to
+# Tampipo/tarot-gitops.
 
 on:
   push:
@@ -91,3 +94,46 @@ jobs:
           # Per-image cache scope so api and web don't clobber each other.
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  # Write the freshly-built tag into the gitops repo -> ArgoCD picks it up.
+  # On main: the rolling sha-<short>. On a vX.Y.Z tag: the pinned release version.
+  # Gated by needs:build so gitops never points at an image that isn't built yet.
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gitops repo
+        uses: actions/checkout@v4
+        with:
+          repository: Tampipo/tarot-gitops
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
+
+      - name: Install kustomize
+        run: |
+          curl -sLo k.tgz https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz
+          tar xzf k.tgz && sudo mv kustomize /usr/local/bin/
+
+      - name: Bump image tags
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF_NAME#v}"   # release vX.Y.Z -> image tag X.Y.Z (type=semver drops the v)
+          else
+            TAG="sha-${GITHUB_SHA::7}"   # main -> rolling sha (matches type=sha,format=short)
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          for svc in api web; do
+            ( cd "gitops/apps/tarot-$svc" \
+              && kustomize edit set image "ghcr.io/$OWNER/tarot-$svc=ghcr.io/$OWNER/tarot-$svc:$TAG" )
+          done
+
+      - name: Commit & push
+        run: |
+          cd gitops
+          git diff --quiet && { echo "no image change"; exit 0; }
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "deploy: tarot images ${TAG}"
+          git push
