@@ -645,4 +645,47 @@ table.tbl {
   .nav-link {
     padding: 8px 10px;
   }
+
+  /* The bar can't hold the brand, five links and the account controls on one
+     phone-width row. Rather than let .nav-links wrap inside a fixed 60px bar —
+     which spilled the wrapped links over the page below — give the bar its own
+     height and drop the links onto a second row of their own. */
+  .nav-inner {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    padding-block: 8px;
+    row-gap: 6px;
+  }
+  .nav-links {
+    order: 3; /* after the account controls, so it lands on the second row */
+    width: 100%;
+    /* One scrolling row beats several stacked ones: the bar keeps a fixed
+       height whatever the roster of links, and nothing overlaps the page. */
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .nav-links::-webkit-scrollbar {
+    display: none;
+  }
+  .nav-link {
+    white-space: nowrap;
+  }
+}
+
+/* Never break a button's label across lines — "Sign out" was wrapping to two
+   rows and pushing itself past the right edge of the viewport. */
+.btn {
+  white-space: nowrap;
+}
+
+/* iOS Safari zooms the whole page when a focused field's text is under 16px,
+   which leaves the layout scrolled sideways and half off-screen. Only bump it
+   on touch pointers so the desktop sizing is untouched. */
+@media (pointer: coarse) {
+  .input,
+  .select {
+    font-size: 16px;
+  }
 }
