@@ -13,7 +13,16 @@ import {
 import { Link } from "react-router-dom";
 import { api, errorMessage } from "../lib/api";
 import { useAuth } from "../contexts/auth";
-import { Alert, Button, Card, Field, Input, Select, SideToggle, Spinner } from "../components/ui";
+import {
+  Alert,
+  Button,
+  Card,
+  Field,
+  Input,
+  Select,
+  SideToggle,
+  Spinner,
+} from "../components/ui";
 import { scoreClass, signed } from "../lib/format";
 import type { Player } from "../lib/types";
 
@@ -29,12 +38,19 @@ const POIGNEE_OPTIONS = [
 const GUEST_PREFIX = "guest:";
 const isGuest = (id: string) => id.startsWith(GUEST_PREFIX);
 const guestId = (seat: number) => `${GUEST_PREFIX}${seat}`;
+/** The guest marker for the *second* half of a shared seat. */
+const shareGuestId = (seat: number) => `${GUEST_PREFIX}share${seat}`;
 
 export function NewGame() {
   const { isAdmin } = useAuth();
   const [players, setPlayers] = useState<Player[] | null>(null); // null = loading
   const [numPlayers, setNumPlayers] = useState(4);
   const [slots, setSlots] = useState<string[]>(["", "", "", ""]);
+  // Per seat: whether two people are sharing it, and who the second one is.
+  // Kept as two arrays so ticking the box can reveal an empty picker without
+  // the seat counting as shared until someone is actually chosen.
+  const [shared, setShared] = useState<boolean[]>([false, false, false, false]);
+  const [sharedWith, setSharedWith] = useState<string[]>(["", "", "", ""]);
   const [takerId, setTakerId] = useState("");
   const [alone, setAlone] = useState(false);
   const [partnerId, setPartnerId] = useState("");
@@ -55,11 +71,14 @@ export function NewGame() {
 
   function setTableSize(n: number) {
     setNumPlayers(n);
-    setSlots((prev) => {
+    const resize = <T,>(prev: T[], fill: T) => {
       const next = prev.slice(0, n);
-      while (next.length < n) next.push("");
+      while (next.length < n) next.push(fill);
       return next;
-    });
+    };
+    setSlots((prev) => resize(prev, ""));
+    setShared((prev) => resize(prev, false));
+    setSharedWith((prev) => resize(prev, ""));
     if (n !== 5) {
       setAlone(false);
       setPartnerId("");
@@ -70,41 +89,80 @@ export function NewGame() {
   const chosen = slots.filter(Boolean);
   const usePartner = numPlayers === 5 && !alone;
 
+  // Seat -> the person sharing it. Only fully-answered seats count, so a
+  // half-filled split never reaches the scorer.
+  const splitWith = useMemo(() => {
+    const map: Record<string, string> = {};
+    slots.forEach((id, i) => {
+      if (id && shared[i] && sharedWith[i]) map[id] = sharedWith[i];
+    });
+    return map;
+  }, [slots, shared, sharedWith]);
+  // Ticked the box but not picked anyone yet — the deal isn't ready to score.
+  const splitPending = slots.some((id, i) => id && shared[i] && !sharedWith[i]);
+
+  // Everyone with a hand in the deal: seats plus whoever shares one.
+  const everyone = [...chosen, ...Object.values(splitWith)];
+
   // Number the guests only when there's more than one, so picking a taker from
   // two "Guest" entries isn't a coin flip.
-  const guestsSeated = chosen.filter(isGuest);
+  const guestsSeated = everyone.filter(isGuest);
   const nameOf = (id: string) => {
     if (!isGuest(id)) return players?.find((p) => p.id === id)?.name ?? id;
     return guestsSeated.length > 1 ? `Guest ${guestsSeated.indexOf(id) + 1}` : "Guest";
   };
+  // A shared seat is one player, so it reads as one entry — under both names.
+  const seatLabel = (id: string) =>
+    splitWith[id] ? `${nameOf(id)} & ${nameOf(splitWith[id])}` : nameOf(id);
+
+  // Nobody may appear twice, whether seated or sharing — so both pickers offer
+  // the same pool minus everyone already spoken for.
+  const takenElsewhere = (id: string, seat: number, half: "seat" | "share") =>
+    slots.some((s, i) => s === id && !(half === "seat" && i === seat)) ||
+    sharedWith.some((s, i) => s === id && !(half === "share" && i === seat));
 
   // Options for one seat: every player not already picked elsewhere, plus Guest.
   // The roster itself is managed by admins, not from here.
   function slotOptions(index: number) {
     return [
       ...(players ?? [])
-        .filter((p) => !slots.some((s, i) => i !== index && s === p.id))
+        .filter((p) => !takenElsewhere(p.id, index, "seat"))
         .map((p) => ({ value: p.id, label: p.name })),
       { value: guestId(index), label: "Guest (not recorded)" },
     ];
   }
+  // The other half of a shared seat. Its guest marker differs from the seat's
+  // own so a seat can be two guests without the two collapsing into one id.
+  function shareOptions(index: number) {
+    return [
+      ...(players ?? [])
+        .filter((p) => !takenElsewhere(p.id, index, "share"))
+        .map((p) => ({ value: p.id, label: p.name })),
+      { value: shareGuestId(index), label: "Guest (not recorded)" },
+    ];
+  }
   // Anyone seated can take or be called, guests included — their share just
-  // goes unrecorded.
-  const seatedOptions = chosen.map((id) => ({ value: id, label: nameOf(id) }));
+  // goes unrecorded. A shared seat takes as a pair.
+  const seatedOptions = chosen.map((id) => ({
+    value: id,
+    label: seatLabel(id),
+  }));
   // A deal with no members would record nothing at all.
-  const hasMember = chosen.some((id) => !isGuest(id));
+  const hasMember = everyone.some((id) => !isGuest(id));
 
   // Build a GameInput and score it live. Any inconsistency (unfilled slot, bad
   // partner…) surfaces as `null` so the preview and Save button stay disabled.
   const input: GameInput | null = useMemo(() => {
     if (chosen.length !== numPlayers) return null;
     if (new Set(chosen).size !== numPlayers) return null;
+    if (splitPending) return null;
     if (!takerId || !chosen.includes(takerId)) return null;
     if (usePartner && (!partnerId || partnerId === takerId)) return null;
     if (!contract) return null;
     if (oudlers === "" || pointsMade === "") return null;
     return {
       playerIds: chosen,
+      splitWith,
       takerId,
       partnerId: usePartner ? partnerId : null,
       contract,
@@ -115,8 +173,19 @@ export function NewGame() {
       misere,
     };
   }, [
-    chosen, numPlayers, takerId, usePartner, partnerId, contract, oudlers,
-    pointsMade, petitAuBout, poignee, misere,
+    chosen,
+    numPlayers,
+    splitWith,
+    splitPending,
+    takerId,
+    usePartner,
+    partnerId,
+    contract,
+    oudlers,
+    pointsMade,
+    petitAuBout,
+    poignee,
+    misere,
   ]);
 
   const preview = useMemo(() => {
@@ -203,22 +272,59 @@ export function NewGame() {
           </Field>
 
           {/* Seats */}
-          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
+          <div
+            className="grid"
+            style={{
+              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+            }}
+          >
             {slots.map((val, i) => (
               <Field key={i} label={`Seat ${i + 1}`}>
-                <Select
-                  placeholder="Select player"
-                  value={val}
-                  options={slotOptions(i)}
-                  onChange={(e) => {
-                    const next = [...slots];
-                    next[i] = e.target.value;
-                    setSlots(next);
-                    // Whoever left this seat can no longer hold a role.
-                    if (takerId === val) setTakerId("");
-                    if (partnerId === val) setPartnerId("");
-                  }}
-                />
+                <div className="stack" style={{ gap: 8 }}>
+                  <Select
+                    placeholder="Select player"
+                    value={val}
+                    options={slotOptions(i)}
+                    onChange={(e) => {
+                      const next = [...slots];
+                      next[i] = e.target.value;
+                      setSlots(next);
+                      // Whoever left this seat can no longer hold a role.
+                      if (takerId === val) setTakerId("");
+                      if (partnerId === val) setPartnerId("");
+                    }}
+                  />
+                  <label className="row" style={{ gap: 8, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={shared[i] ?? false}
+                      onChange={(e) => {
+                        const next = [...shared];
+                        next[i] = e.target.checked;
+                        setShared(next);
+                        // Un-ticking drops the second person entirely.
+                        if (!e.target.checked) {
+                          const w = [...sharedWith];
+                          w[i] = "";
+                          setSharedWith(w);
+                        }
+                      }}
+                    />
+                    <span className="muted">Split seat</span>
+                  </label>
+                  {shared[i] && (
+                    <Select
+                      placeholder="Sharing with"
+                      value={sharedWith[i] ?? ""}
+                      options={shareOptions(i)}
+                      onChange={(e) => {
+                        const next = [...sharedWith];
+                        next[i] = e.target.value;
+                        setSharedWith(next);
+                      }}
+                    />
+                  )}
+                </div>
               </Field>
             ))}
           </div>
@@ -226,7 +332,12 @@ export function NewGame() {
           <hr className="hr" />
 
           {/* Roles */}
-          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
+          <div
+            className="grid"
+            style={{
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+            }}
+          >
             <Field label="Taker">
               <Select
                 placeholder="Who took?"
@@ -240,12 +351,12 @@ export function NewGame() {
               <Field label="Partner">
                 <div className="stack" style={{ gap: 8 }}>
                   <label className="row" style={{ gap: 8, cursor: "pointer" }}>
+                    <span className="muted">Taker plays alone</span>
                     <input
                       type="checkbox"
                       checked={alone}
                       onChange={(e) => setAlone(e.target.checked)}
                     />
-                    <span className="muted">Taker plays alone</span>
                   </label>
                   {usePartner && (
                     <Select
@@ -263,7 +374,10 @@ export function NewGame() {
               <Select
                 placeholder="Which bid?"
                 value={contract}
-                options={CONTRACTS.map((c) => ({ value: c, label: CONTRACT_LABEL[c] }))}
+                options={CONTRACTS.map((c) => ({
+                  value: c,
+                  label: CONTRACT_LABEL[c],
+                }))}
                 onChange={(e) => setContract(e.target.value as Contract)}
               />
             </Field>
@@ -272,7 +386,10 @@ export function NewGame() {
               <Select
                 placeholder="0–3"
                 value={oudlers}
-                options={[0, 1, 2, 3].map((n) => ({ value: String(n), label: String(n) }))}
+                options={[0, 1, 2, 3].map((n) => ({
+                  value: String(n),
+                  label: String(n),
+                }))}
                 onChange={(e) => setOudlers(e.target.value)}
               />
             </Field>
@@ -294,7 +411,12 @@ export function NewGame() {
           <hr className="hr" />
 
           {/* Bonuses */}
-          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+          <div
+            className="grid"
+            style={{
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
+          >
             <Field label="Petit au bout">
               <SideToggle value={petitAuBout} onChange={setPetitAuBout} />
             </Field>
@@ -335,33 +457,47 @@ export function NewGame() {
                 </tr>
               </thead>
               <tbody>
-                {chosen.map((id) => {
-                  const role =
-                    id === takerId
-                      ? "Taker"
-                      : usePartner && id === partnerId
-                        ? "Partner"
-                        : "Defence";
-                  const s = preview.scores[id];
-                  const guest = isGuest(id);
-                  return (
-                    <tr key={id}>
-                      <td style={{ fontWeight: 600 }}>
-                        {nameOf(id)}
-                        {guest && (
-                          <span className="muted" style={{ fontWeight: 400 }}>
-                            {" "}
-                            · not recorded
-                          </span>
-                        )}
-                      </td>
-                      <td className="muted">{role}</td>
-                      <td className="num">
-                        <span className={scoreClass(s)}>{signed(s)}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {chosen
+                  // A shared seat contributes both its occupants, one after the
+                  // other, each with their half.
+                  .flatMap((seatId) =>
+                    splitWith[seatId]
+                      ? [
+                          { id: seatId, seatId },
+                          { id: splitWith[seatId], seatId },
+                        ]
+                      : [{ id: seatId, seatId }],
+                  )
+                  .map(({ id, seatId }) => {
+                    const role =
+                      seatId === takerId
+                        ? "Taker"
+                        : usePartner && seatId === partnerId
+                          ? "Partner"
+                          : "Defence";
+                    const s = preview.scores[id];
+                    const guest = isGuest(id);
+                    return (
+                      <tr key={id}>
+                        <td style={{ fontWeight: 600 }}>
+                          {nameOf(id)}
+                          {guest && (
+                            <span className="muted" style={{ fontWeight: 400 }}>
+                              {" "}
+                              · not recorded
+                            </span>
+                          )}
+                        </td>
+                        <td className="muted">
+                          {role}
+                          {splitWith[seatId] && " · ½ seat"}
+                        </td>
+                        <td className="num">
+                          <span className={scoreClass(s)}>{signed(s)}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>

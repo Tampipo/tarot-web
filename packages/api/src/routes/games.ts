@@ -17,6 +17,9 @@ const isGuest = (id: string) => id.startsWith(GUEST_PREFIX);
 
 const createGameSchema = z.object({
   playerIds: z.array(z.string()).min(3).max(5),
+  // Seat -> the person sharing it. Lets more than five play a five-seat deal;
+  // the pair splits that seat's score. The engine rejects an incoherent map.
+  splitWith: z.record(z.string(), z.string()).default({}),
   takerId: z.string(),
   partnerId: z.string().nullable().default(null),
   contract: z.enum(CONTRACTS),
@@ -74,7 +77,13 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
   app.post("/games", { preHandler: requireAuth }, async (req, reply) => {
     const body = createGameSchema.parse(req.body);
 
-    const realIds = [...new Set(body.playerIds.filter((id) => !isGuest(id)))];
+    // Whoever shares a seat is playing too, so they need a GamePlayer row and
+    // the same "is an approved member" check as anyone seated.
+    const realIds = [
+      ...new Set(
+        [...body.playerIds, ...Object.values(body.splitWith)].filter((id) => !isGuest(id)),
+      ),
+    ];
     // Anyone may take, guests included — we simply record the members' scores
     // and the guest's share goes unstored (so the saved rows won't sum to zero).
     // A deal with nobody tracked would record nothing at all, though.
@@ -95,6 +104,13 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
     const input: GameInput = { ...body };
     const result = scoreGame(input);
 
+    // Who shared a seat with whom, readable from either end.
+    const seatMate: Record<string, string> = {};
+    for (const [seatId, coId] of Object.entries(body.splitWith)) {
+      seatMate[seatId] = coId;
+      seatMate[coId] = seatId;
+    }
+
     // Deals always land in the season that is open right now (rolling it over
     // first if it has come due).
     const season = await currentSeason();
@@ -114,12 +130,20 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
         // A guest in either role stores as null; selfCalled still records
         // whether the taker had a partner at all.
         takerId: isGuest(body.takerId) ? null : body.takerId,
-        partnerId:
-          body.partnerId && !isGuest(body.partnerId) ? body.partnerId : null,
+        partnerId: body.partnerId && !isGuest(body.partnerId) ? body.partnerId : null,
         createdById: req.authUser!.id,
         // Only member seats are persisted; guests leave no trace.
         players: {
-          create: realIds.map((uid) => ({ userId: uid, score: result.scores[uid] })),
+          create: realIds.map((uid) => {
+            // Seat-sharing is symmetric, so store it from both sides — but only
+            // when the other half is a member (a guest has no row to point at).
+            const co = seatMate[uid];
+            return {
+              userId: uid,
+              score: result.scores[uid],
+              sharesSeatWithId: co && !isGuest(co) ? co : null,
+            };
+          }),
         },
       },
       include: { taker: true, partner: true, players: { include: { user: true } } },

@@ -29,6 +29,7 @@ model User {
   gamePlayers  GamePlayer[]
   takenGames   Game[]       @relation("taker")
   partneredIn  Game[]       @relation("partner")
+  sharedSeats  GamePlayer[] @relation("seatShare")
 }
 
 // Single-row app config (id is always "singleton").
@@ -101,7 +102,16 @@ model GamePlayer {
   game   Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
   userId String
   user   User   @relation(fields: [userId], references: [id])
-  score  Int
+  // Float, not Int: two people sharing a seat take half of it each, and a seat
+  // worth an odd number doesn't halve evenly. Rounding would break the zero-sum.
+  score  Float
+
+  // Set on both rows when two people shared one seat — each points at the
+  // other. Null for a normal seat, and also when the other half was a guest
+  // (guests have no User row). Lets the scoreboard credit a shared taker seat
+  // to both of them.
+  sharesSeatWithId String?
+  sharesSeatWith   User?   @relation("seatShare", fields: [sharesSeatWithId], references: [id])
 
   @@id([gameId, userId])
   @@index([userId])

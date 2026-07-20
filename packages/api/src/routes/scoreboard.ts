@@ -39,12 +39,16 @@ export async function scoreboardRoutes(app: FastifyInstance): Promise<void> {
         u.id,
         u.name,
         COUNT(*)::int                                            AS games,
-        SUM(gp.score)::int                                       AS total,
+        -- float8, not int: a shared seat pays half, so totals can end in .5.
+        SUM(gp.score)::float8                                    AS total,
         ROUND(AVG(gp.score)::numeric, 1)::float8                 AS mean,
         COALESCE(STDDEV_SAMP(gp.score), 0)::float8               AS std,
-        MAX(gp.score)::int                                       AS best,
-        MIN(gp.score)::int                                       AS worst,
-        SUM(CASE WHEN g."takerId" = u.id THEN 1 ELSE 0 END)::int AS "takerCount"
+        MAX(gp.score)::float8                                    AS best,
+        MIN(gp.score)::float8                                    AS worst,
+        -- Sharing the taker's seat counts as having taken: gp is this user's
+        -- row, so gp."sharesSeatWithId" is whoever sat with them.
+        SUM(CASE WHEN g."takerId" = u.id OR g."takerId" = gp."sharesSeatWithId"
+                 THEN 1 ELSE 0 END)::int                         AS "takerCount"
       FROM "User" u
       JOIN "GamePlayer" gp ON gp."userId" = u.id
       JOIN "Game" g        ON g.id = gp."gameId"

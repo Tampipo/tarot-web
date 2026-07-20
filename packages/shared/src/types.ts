@@ -50,8 +50,19 @@ export const TARGET_BY_OUDLERS: Record<number, number> = {
 
 /** Everything needed to score one deal. Player ids are opaque strings. */
 export interface GameInput {
-  /** Every player at the table (3, 4 or 5), including the taker and partner. */
+  /**
+   * Every *seat* at the table (3, 4 or 5), including the taker and partner.
+   * A seat is named by the person holding it — or, when shared, by the first
+   * of the two (see `splitWith`).
+   */
   playerIds: string[];
+  /**
+   * Seats shared by two people, so more than five can play one deal: maps a
+   * seat (a `playerIds` entry) to the person sharing it. The pair counts as a
+   * single player throughout — one seat, one hand, one role — and each of them
+   * banks half of whatever that seat scores.
+   */
+  splitWith?: Record<string, string>;
   takerId: string;
   /** The called partner (5 players only). null when the taker plays alone. */
   partnerId: string | null;

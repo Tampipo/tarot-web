@@ -36,6 +36,26 @@ export function validateGame(input: GameInput): void {
       throw new ScoringError("The partner must be different from the taker.");
     }
   }
+  // A shared seat still holds exactly one hand, so its two occupants must be a
+  // genuine pair from outside the table: nobody sits twice, nobody shares two
+  // seats. Without this the halves would double-count someone.
+  const seated = new Set(input.playerIds);
+  const sharers = new Set<string>();
+  for (const [seatId, coId] of Object.entries(input.splitWith ?? {})) {
+    if (!seated.has(seatId)) {
+      throw new ScoringError("A shared seat must be one of the players.");
+    }
+    if (coId === seatId) {
+      throw new ScoringError("A seat cannot be shared with the player already in it.");
+    }
+    if (seated.has(coId)) {
+      throw new ScoringError("Someone sharing a seat already has a seat of their own.");
+    }
+    if (sharers.has(coId)) {
+      throw new ScoringError("The same player cannot share two seats.");
+    }
+    sharers.add(coId);
+  }
   if (!Number.isInteger(input.oudlers) || input.oudlers < 0 || input.oudlers > 3) {
     throw new ScoringError("Oudlers must be an integer between 0 and 3.");
   }
@@ -66,6 +86,9 @@ export function validateGame(input: GameInput): void {
  *   • 5 players, taker alone     → taker ±4·base, each of 4 defenders ∓base
  *   • 5 players, called partner  → taker ±2·base, partner ±base, 3 defenders ∓base
  *
+ * Any seat may then be shared by two people (`splitWith`), who take half of it
+ * each — that's how six or more play a five-seat deal. Halves may be fractional.
+ *
  * (The previous implementation only handled 5 players and let the partnered
  * taker take 3·base — which did not sum to zero. Both are fixed here.)
  */
@@ -93,10 +116,40 @@ export function scoreGame(input: GameInput): GameResult {
 }
 
 /**
- * Zero-sum split of `base` across the table. The taker's team collectively
- * gains `base` per opponent, so the whole table nets to zero.
+ * Zero-sum split of `base` across the table, then across shared seats. The
+ * taker's team collectively gains `base` per opponent, so the whole table nets
+ * to zero; halving a seat between two people preserves that exactly, since the
+ * two halves still add up to the seat's own score.
  */
 function distribute(input: GameInput, base: number): Record<string, number> {
+  return splitSeats(seatScores(input, base), input.splitWith);
+}
+
+/**
+ * Hand each shared seat's score to its two occupants, half each. Scores can
+ * land on .5 — a seat worth an odd number simply doesn't halve evenly, and
+ * rounding here would break the zero-sum.
+ */
+function splitSeats(
+  seats: Record<string, number>,
+  splitWith: Record<string, string> | undefined,
+): Record<string, number> {
+  if (!splitWith) return seats;
+  const scores: Record<string, number> = {};
+  for (const [seatId, score] of Object.entries(seats)) {
+    const coId = splitWith[seatId];
+    if (coId === undefined) {
+      scores[seatId] = score;
+    } else {
+      scores[seatId] = score / 2;
+      scores[coId] = score / 2;
+    }
+  }
+  return scores;
+}
+
+/** The per-seat split, before any seat is shared out between two people. */
+function seatScores(input: GameInput, base: number): Record<string, number> {
   const withPartner = input.partnerId !== null;
   const defenders = input.playerIds.filter(
     (id) => id !== input.takerId && id !== input.partnerId,

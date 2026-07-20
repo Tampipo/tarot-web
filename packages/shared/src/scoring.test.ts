@@ -116,6 +116,49 @@ describe("scoreGame — zero-sum distribution", () => {
   });
 });
 
+describe("scoreGame — shared seats", () => {
+  it("halves a shared defender seat between its two occupants", () => {
+    // 4 seats, base 70: taker +210, each defender −70. b's seat is shared.
+    const r = scoreGame(base4({ splitWith: { b: "e" } }));
+    expect(r.scores.a).toBe(210);
+    expect(r.scores.b).toBe(-35);
+    expect(r.scores.e).toBe(-35);
+    expect(r.scores.c).toBe(-70);
+    expect(sum(r.scores)).toBe(0);
+  });
+
+  it("halves a shared taker seat too", () => {
+    const r = scoreGame(base4({ splitWith: { a: "e" } }));
+    expect(r.scores.a).toBe(105);
+    expect(r.scores.e).toBe(105);
+    expect(sum(r.scores)).toBe(0);
+  });
+
+  it("stays zero-sum with several seats shared at once", () => {
+    const r = scoreGame(base4({ splitWith: { a: "e", b: "f", c: "g" } }));
+    expect(sum(r.scores)).toBe(0);
+    expect(Object.keys(r.scores)).toHaveLength(7);
+  });
+
+  it("gives each occupant a half point when the seat is odd", () => {
+    // petite (×1) hit exactly → base 25; a lone taker at 3 seats faces 2
+    // defenders, so a defender seat is worth −25 and halves to −12.5.
+    const r = scoreGame(
+      base4({
+        playerIds: ["a", "b", "c"],
+        contract: "petite",
+        oudlers: 2,
+        pointsMade: 41,
+        splitWith: { b: "e" },
+      }),
+    );
+    expect(r.baseScore).toBe(25);
+    expect(r.scores.b).toBe(-12.5);
+    expect(r.scores.e).toBe(-12.5);
+    expect(sum(r.scores)).toBe(0);
+  });
+});
+
 describe("validateGame", () => {
   it("rejects fewer than 3 players", () => {
     expect(() => validateGame(base4({ playerIds: ["a", "b"] }))).toThrow(ScoringError);
@@ -131,5 +174,14 @@ describe("validateGame", () => {
   });
   it("rejects out-of-range card points", () => {
     expect(() => validateGame(base4({ pointsMade: 92 }))).toThrow(ScoringError);
+  });
+  it("rejects sharing a seat that isn't at the table", () => {
+    expect(() => validateGame(base4({ splitWith: { z: "e" } }))).toThrow(ScoringError);
+  });
+  it("rejects sharing a seat with someone already seated", () => {
+    expect(() => validateGame(base4({ splitWith: { a: "b" } }))).toThrow(ScoringError);
+  });
+  it("rejects one person sharing two seats", () => {
+    expect(() => validateGame(base4({ splitWith: { a: "e", b: "e" } }))).toThrow(ScoringError);
   });
 });
