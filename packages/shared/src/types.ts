@@ -40,6 +40,9 @@ export const POIGNEE_VALUE: Record<Poignee, number> = {
   triple: 40,
 };
 
+/** Card points in the whole deck — every deal deals out exactly this many. */
+export const DECK_POINTS = 91;
+
 /** Card points the attack must reach, indexed by number of oudlers (bouts) held. */
 export const TARGET_BY_OUDLERS: Record<number, number> = {
   0: 56,
@@ -75,6 +78,28 @@ export interface GameInput {
   poignee: Poignee;
   /** House-rule "misère" bonus, ±10 × multiplier, awarded to either camp. */
   misere: Side;
+}
+
+/**
+ * An enculette: nobody wanted to take, so there is no attack, no contract and
+ * no bonuses. Everyone plays for themselves and the aim inverts — you want as
+ * few card points as possible, and each seat scores what it *avoided*.
+ */
+export interface EnculetteInput {
+  /** Every seat at the table (3, 4 or 5). */
+  playerIds: string[];
+  /** Shared seats, exactly as in a normal deal — the pair halves the result. */
+  splitWith?: Record<string, string>;
+  /**
+   * Card points taken by each seat. A shared seat plays one hand, so it gets
+   * one entry. They must add up to the deck's 91.
+   */
+  cardPoints: Record<string, number>;
+}
+
+export interface EnculetteResult {
+  /** Score for every player id: 91 − the seat's card points, halved if shared. */
+  scores: Record<string, number>;
 }
 
 export interface GameResult {

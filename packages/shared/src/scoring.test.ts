@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { scoreGame, ScoringError, validateGame } from "./scoring";
-import type { GameInput } from "./types";
+import { scoreEnculette, scoreGame, ScoringError, validateGame } from "./scoring";
+import type { EnculetteInput, GameInput } from "./types";
 
 /** A plain 4-player deal the taker just wins by 10 with 2 oudlers. */
 function base4(overrides: Partial<GameInput> = {}): GameInput {
@@ -156,6 +156,55 @@ describe("scoreGame — shared seats", () => {
     expect(r.scores.b).toBe(-12.5);
     expect(r.scores.e).toBe(-12.5);
     expect(sum(r.scores)).toBe(0);
+  });
+});
+
+describe("scoreEnculette", () => {
+  /** 4 seats whose card points add up to the deck's 91. */
+  function enc(overrides: Partial<EnculetteInput> = {}): EnculetteInput {
+    return {
+      playerIds: ["a", "b", "c", "d"],
+      cardPoints: { a: 10, b: 20, c: 30, d: 31 },
+      ...overrides,
+    };
+  }
+
+  it("scores each seat the points it avoided", () => {
+    const r = scoreEnculette(enc());
+    expect(r.scores).toEqual({ a: 81, b: 71, c: 61, d: 60 });
+  });
+
+  it("rewards taking least — the cleanest hand scores highest", () => {
+    const r = scoreEnculette(enc());
+    expect(r.scores.a).toBeGreaterThan(r.scores.d);
+  });
+
+  it("hands out (n − 1) × 91 in total, not zero", () => {
+    expect(sum(scoreEnculette(enc()).scores)).toBe(3 * 91);
+  });
+
+  it("halves a shared seat between its occupants", () => {
+    // c's seat took 30, so it is worth 61 — split, that is 30.5 each.
+    const r = scoreEnculette(enc({ splitWith: { c: "e" } }));
+    expect(r.scores.c).toBe(30.5);
+    expect(r.scores.e).toBe(30.5);
+    expect(sum(r.scores)).toBe(3 * 91);
+  });
+
+  it("rejects a table whose card points don't add up to 91", () => {
+    expect(() => scoreEnculette(enc({ cardPoints: { a: 10, b: 20, c: 30, d: 30 } }))).toThrow(
+      ScoringError,
+    );
+  });
+
+  it("rejects a seat with no card points entered", () => {
+    expect(() => scoreEnculette(enc({ cardPoints: { a: 10, b: 20, c: 61 } }))).toThrow(
+      ScoringError,
+    );
+  });
+
+  it("rejects sharing a seat with someone already seated", () => {
+    expect(() => scoreEnculette(enc({ splitWith: { a: "b" } }))).toThrow(ScoringError);
   });
 });
 

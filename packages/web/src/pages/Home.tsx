@@ -50,13 +50,68 @@ export function Home() {
   );
 }
 
+/**
+ * An enculette has no taker, contract or oudlers to show — the story of the
+ * deal is who managed to take the least, so that's what leads.
+ */
+function EnculetteRow({ game }: { game: GameDTO }) {
+  // Highest score = fewest card points taken. Guests leave no row, so this can
+  // be empty on an all-guest table.
+  const best = game.players.reduce<GameDTO["players"][number] | null>(
+    (top, p) => (top === null || p.score > top.score ? p : top),
+    null,
+  );
+  return (
+    <div
+      className="row"
+      style={{
+        justifyContent: "space-between",
+        padding: "12px 14px",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-sm)",
+        background: "var(--surface-2)",
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 600 }}>
+          Enculette
+          {best && (
+            <span className="muted" style={{ fontWeight: 400 }}>
+              {" "}
+              · {best.name} took the least
+            </span>
+          )}
+        </div>
+        <div className="muted" style={{ fontSize: "0.85rem" }}>
+          {dateLabel(game.playedAt)} · {game.numPlayers} players
+          {best?.cardPoints !== null && best !== null && ` · ${best.cardPoints} pts taken`}
+        </div>
+      </div>
+      <div className="row" style={{ gap: 10 }}>
+        <span className="badge">Enculette</span>
+        {best && (
+          <span
+            className={scoreClass(best.score)}
+            style={{ minWidth: 48, textAlign: "right" }}
+            title="Best hand of the deal"
+          >
+            {signed(best.score)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function GameRow({ game }: { game: GameDTO }) {
+  if (game.mode === "enculette") return <EnculetteRow game={game} />;
   // A null taker/partner means a guest held that role.
   const takerName = game.taker?.name ?? "Guest";
   const partnerName = game.selfCalled ? null : (game.partner?.name ?? "Guest");
   // Guests leave no score row, so fall back to the deal's value to the attack.
+  // baseScore is only ever null on an enculette, which never reaches this far.
   const takerRow = game.taker && game.players.find((p) => p.id === game.taker!.id);
-  const headline = takerRow ? takerRow.score : game.baseScore;
+  const headline = takerRow ? takerRow.score : (game.baseScore ?? 0);
   return (
     <div
       className="row"

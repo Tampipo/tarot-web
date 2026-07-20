@@ -2,11 +2,16 @@ import { useEffect, useMemo, useState } from "react";
 import {
   CONTRACT_LABEL,
   CONTRACTS,
+  DECK_POINTS,
+  scoreEnculette,
   scoreGame,
   ScoringError,
   TARGET_BY_OUDLERS,
   type Contract,
+  type EnculetteInput,
+  type EnculetteResult,
   type GameInput,
+  type GameResult,
   type Poignee,
   type Side,
 } from "@tarot/shared";
@@ -33,6 +38,16 @@ const POIGNEE_OPTIONS = [
   { value: "triple", label: "Triple (40)" },
 ];
 
+/**
+ * The live score, tagged by which rules produced it — the two modes carry
+ * genuinely different results (an enculette has no attack and so no baseScore),
+ * so the tag is what lets the view read the right fields.
+ */
+type Preview =
+  | { kind: "standard"; result: GameResult }
+  | { kind: "enculette"; result: EnculetteResult }
+  | { kind: "error"; message: string };
+
 // A guest fills a seat so the deal scores correctly, but nothing about them is
 // saved. Each seat gets its own marker so two guests never collide.
 const GUEST_PREFIX = "guest:";
@@ -51,6 +66,10 @@ export function NewGame() {
   // the seat counting as shared until someone is actually chosen.
   const [shared, setShared] = useState<boolean[]>([false, false, false, false]);
   const [sharedWith, setSharedWith] = useState<string[]>(["", "", "", ""]);
+  // Enculette: nobody took, so there's no contract to fill in — just the card
+  // points each seat ended up with, one entry per seat.
+  const [enculette, setEnculette] = useState(false);
+  const [cardPoints, setCardPoints] = useState<string[]>(["", "", "", ""]);
   const [takerId, setTakerId] = useState("");
   const [alone, setAlone] = useState(false);
   const [partnerId, setPartnerId] = useState("");
@@ -79,6 +98,7 @@ export function NewGame() {
     setSlots((prev) => resize(prev, ""));
     setShared((prev) => resize(prev, false));
     setSharedWith((prev) => resize(prev, ""));
+    setCardPoints((prev) => resize(prev, ""));
     if (n !== 5) {
       setAlone(false);
       setPartnerId("");
@@ -153,6 +173,7 @@ export function NewGame() {
   // Build a GameInput and score it live. Any inconsistency (unfilled slot, bad
   // partner…) surfaces as `null` so the preview and Save button stay disabled.
   const input: GameInput | null = useMemo(() => {
+    if (enculette) return null;
     if (chosen.length !== numPlayers) return null;
     if (new Set(chosen).size !== numPlayers) return null;
     if (splitPending) return null;
@@ -173,6 +194,7 @@ export function NewGame() {
       misere,
     };
   }, [
+    enculette,
     chosen,
     numPlayers,
     splitWith,
@@ -188,29 +210,53 @@ export function NewGame() {
     misere,
   ]);
 
-  const preview = useMemo(() => {
-    if (!input) return null;
-    try {
-      return scoreGame(input);
-    } catch (e) {
-      return e instanceof ScoringError ? { error: e.message } : null;
+  // The same, for an enculette: one card-points entry per seat, since a shared
+  // seat still played a single hand between the two of them.
+  const encInput: EnculetteInput | null = useMemo(() => {
+    if (!enculette) return null;
+    if (chosen.length !== numPlayers) return null;
+    if (new Set(chosen).size !== numPlayers) return null;
+    if (splitPending) return null;
+    const points: Record<string, number> = {};
+    for (let i = 0; i < numPlayers; i++) {
+      const id = slots[i];
+      if (!id || cardPoints[i] === "") return null;
+      points[id] = Number(cardPoints[i]);
     }
-  }, [input]);
+    return { playerIds: chosen, splitWith, cardPoints: points };
+  }, [enculette, chosen, numPlayers, splitPending, slots, cardPoints, splitWith]);
+
+  // Running total, so a miscount shows up before saving rather than as a
+  // rejection: a deal always deals out exactly 91 card points.
+  const pointsEntered = cardPoints
+    .slice(0, numPlayers)
+    .reduce((total, v) => total + (v === "" ? 0 : Number(v)), 0);
+
+  const preview: Preview | null = useMemo(() => {
+    try {
+      if (encInput) return { kind: "enculette", result: scoreEnculette(encInput) };
+      if (input) return { kind: "standard", result: scoreGame(input) };
+      return null;
+    } catch (e) {
+      return e instanceof ScoringError ? { kind: "error", message: e.message } : null;
+    }
+  }, [input, encInput]);
 
   // Preview still scores an all-guest table (the maths is fine); it just can't
   // be saved, since there'd be no score to record for anyone.
-  const previewOk = preview && !("error" in preview);
-  const canSave = Boolean(previewOk && hasMember);
+  const scored = preview && preview.kind !== "error" ? preview : null;
+  const canSave = Boolean(scored && hasMember);
 
   async function save() {
-    if (!input) return;
+    const payload = encInput ? { mode: "enculette", ...encInput } : input;
+    if (!payload) return;
     setError(null);
     setSaving(true);
     try {
-      await api.post("/games", input);
+      await api.post("/games", payload);
       setSaved(
-        preview && "baseScore" in preview
-          ? `Game saved — attack ${preview.won ? "won" : "lost"} ${Math.abs(preview.baseScore)} points.`
+        preview?.kind === "standard"
+          ? `Game saved — attack ${preview.result.won ? "won" : "lost"} ${Math.abs(preview.result.baseScore)} points.`
           : "Game saved.",
       );
       // Keep the table seated for the next deal; reset only the deal details.
@@ -223,6 +269,7 @@ export function NewGame() {
       setPoignee("none");
       setMisere("none");
       setAlone(false);
+      setCardPoints((prev) => prev.map(() => ""));
     } catch (err) {
       setError(errorMessage(err, "Could not save the game"));
     } finally {
@@ -254,6 +301,34 @@ export function NewGame() {
     <div className="stack">
       <Card title="New game" subtitle="Record a deal and split the score.">
         <div className="stack">
+          {/* Which rules — the whole form below changes with it. */}
+          <Field label="Deal">
+            <div className="segmented">
+              <button
+                type="button"
+                className="seg"
+                aria-pressed={!enculette}
+                onClick={() => {
+                  setEnculette(false);
+                  setSaved(null);
+                }}
+              >
+                Standard
+              </button>
+              <button
+                type="button"
+                className="seg"
+                aria-pressed={enculette}
+                onClick={() => {
+                  setEnculette(true);
+                  setSaved(null);
+                }}
+              >
+                Enculette
+              </button>
+            </div>
+          </Field>
+
           {/* Table size */}
           <Field label="Players at the table">
             <div className="segmented">
@@ -324,128 +399,166 @@ export function NewGame() {
                       }}
                     />
                   )}
+                  {/* One count per seat: a shared seat played a single hand. */}
+                  {enculette && (
+                    <Input
+                      type="number"
+                      min={0}
+                      max={DECK_POINTS}
+                      value={cardPoints[i] ?? ""}
+                      placeholder="Card points taken"
+                      onChange={(e) => {
+                        const next = [...cardPoints];
+                        next[i] = e.target.value;
+                        setCardPoints(next);
+                      }}
+                    />
+                  )}
                 </div>
               </Field>
             ))}
           </div>
 
-          <hr className="hr" />
+          {enculette && (
+            <div className="muted" style={{ fontSize: "0.85rem" }}>
+              {pointsEntered} / {DECK_POINTS} card points entered
+              {pointsEntered !== DECK_POINTS && " — the table must add up to 91"}
+            </div>
+          )}
 
-          {/* Roles */}
-          <div
-            className="grid"
-            style={{
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            }}
-          >
-            <Field label="Taker">
-              <Select
-                placeholder="Who took?"
-                value={takerId}
-                options={seatedOptions}
-                onChange={(e) => setTakerId(e.target.value)}
-              />
-            </Field>
+          {/* Nobody took, so there is no contract, role or bonus to record. */}
+          {!enculette && (
+            <>
+              <hr className="hr" />
 
-            {numPlayers === 5 && (
-              <Field label="Partner">
-                <div className="stack" style={{ gap: 8 }}>
-                  {usePartner && (
-                    <Select
-                      placeholder="Called partner"
-                      value={partnerId}
-                      options={seatedOptions.filter((o) => o.value !== takerId)}
-                      onChange={(e) => setPartnerId(e.target.value)}
-                    />
-                  )}
-                  <label className="row" style={{ gap: 8, cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={alone}
-                      onChange={(e) => setAlone(e.target.checked)}
-                    />
-                    <span className="muted">Taker plays alone</span>
-                  </label>
-                </div>
-              </Field>
-            )}
+              {/* Roles */}
+              <div
+                className="grid"
+                style={{
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                }}
+              >
+                <Field label="Taker">
+                  <Select
+                    placeholder="Who took?"
+                    value={takerId}
+                    options={seatedOptions}
+                    onChange={(e) => setTakerId(e.target.value)}
+                  />
+                </Field>
 
-            <Field label="Contract">
-              <Select
-                placeholder="Which bid?"
-                value={contract}
-                options={CONTRACTS.map((c) => ({
-                  value: c,
-                  label: CONTRACT_LABEL[c],
-                }))}
-                onChange={(e) => setContract(e.target.value as Contract)}
-              />
-            </Field>
+                {numPlayers === 5 && (
+                  <Field label="Partner">
+                    <div className="stack" style={{ gap: 8 }}>
+                      {usePartner && (
+                        <Select
+                          placeholder="Called partner"
+                          value={partnerId}
+                          options={seatedOptions.filter((o) => o.value !== takerId)}
+                          onChange={(e) => setPartnerId(e.target.value)}
+                        />
+                      )}
+                      <label className="row" style={{ gap: 8, cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={alone}
+                          onChange={(e) => setAlone(e.target.checked)}
+                        />
+                        <span className="muted">Taker plays alone</span>
+                      </label>
+                    </div>
+                  </Field>
+                )}
 
-            <Field label="Oudlers (bouts)">
-              <Select
-                placeholder="0–3"
-                value={oudlers}
-                options={[0, 1, 2, 3].map((n) => ({
-                  value: String(n),
-                  label: String(n),
-                }))}
-                onChange={(e) => setOudlers(e.target.value)}
-              />
-            </Field>
+                <Field label="Contract">
+                  <Select
+                    placeholder="Which bid?"
+                    value={contract}
+                    options={CONTRACTS.map((c) => ({
+                      value: c,
+                      label: CONTRACT_LABEL[c],
+                    }))}
+                    onChange={(e) => setContract(e.target.value as Contract)}
+                  />
+                </Field>
 
-            <Field label="Attack card points (0–91)">
-              <Input
-                type="number"
-                min={0}
-                max={91}
-                value={pointsMade}
-                onChange={(e) => setPointsMade(e.target.value)}
-                placeholder={
-                  oudlers !== "" ? `needs ≥ ${TARGET_BY_OUDLERS[Number(oudlers)]}` : "0–91"
-                }
-              />
-            </Field>
-          </div>
+                <Field label="Oudlers (bouts)">
+                  <Select
+                    placeholder="0–3"
+                    value={oudlers}
+                    options={[0, 1, 2, 3].map((n) => ({
+                      value: String(n),
+                      label: String(n),
+                    }))}
+                    onChange={(e) => setOudlers(e.target.value)}
+                  />
+                </Field>
 
-          <hr className="hr" />
+                <Field label="Attack card points (0–91)">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={91}
+                    value={pointsMade}
+                    onChange={(e) => setPointsMade(e.target.value)}
+                    placeholder={
+                      oudlers !== ""
+                        ? `needs ≥ ${TARGET_BY_OUDLERS[Number(oudlers)]}`
+                        : "0–91"
+                    }
+                  />
+                </Field>
+              </div>
 
-          {/* Bonuses */}
-          <div
-            className="grid"
-            style={{
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            }}
-          >
-            <Field label="Petit au bout">
-              <SideToggle value={petitAuBout} onChange={setPetitAuBout} />
-            </Field>
-            <Field label="Misère">
-              <SideToggle value={misere} onChange={setMisere} />
-            </Field>
-            {/* Size only — the bonus goes to whichever camp wins the deal. */}
-            <Field label="Poignée">
-              <Select
-                value={poignee}
-                options={POIGNEE_OPTIONS}
-                onChange={(e) => setPoignee(e.target.value as Poignee)}
-              />
-            </Field>
-          </div>
+              <hr className="hr" />
+
+              {/* Bonuses */}
+              <div
+                className="grid"
+                style={{
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                }}
+              >
+                <Field label="Petit au bout">
+                  <SideToggle value={petitAuBout} onChange={setPetitAuBout} />
+                </Field>
+                <Field label="Misère">
+                  <SideToggle value={misere} onChange={setMisere} />
+                </Field>
+                {/* Size only — the bonus goes to whichever camp wins the deal. */}
+                <Field label="Poignée">
+                  <Select
+                    value={poignee}
+                    options={POIGNEE_OPTIONS}
+                    onChange={(e) => setPoignee(e.target.value as Poignee)}
+                  />
+                </Field>
+              </div>
+            </>
+          )}
         </div>
       </Card>
 
       {/* Live result */}
-      {preview && "error" in preview && <Alert kind="danger">{preview.error}</Alert>}
+      {preview?.kind === "error" && <Alert kind="danger">{preview.message}</Alert>}
 
-      {previewOk && preview && "scores" in preview && (
+      {scored && (
         <Card
           title={
-            <span className={preview.won ? "score pos" : "score neg"}>
-              Attack {preview.won ? "wins" : "loses"} {Math.abs(preview.baseScore)}
-            </span>
+            scored.kind === "standard" ? (
+              <span className={scored.result.won ? "score pos" : "score neg"}>
+                Attack {scored.result.won ? "wins" : "loses"}{" "}
+                {Math.abs(scored.result.baseScore)}
+              </span>
+            ) : (
+              <span>Enculette</span>
+            )
           }
-          subtitle="Live score — how the deal splits across the table."
+          subtitle={
+            scored.kind === "standard"
+              ? "Live score — how the deal splits across the table."
+              : "Live score — everyone banks the points they didn't take."
+          }
         >
           <div className="table-wrap">
             <table className="tbl">
@@ -475,7 +588,7 @@ export function NewGame() {
                         : usePartner && seatId === partnerId
                           ? "Partner"
                           : "Defence";
-                    const s = preview.scores[id];
+                    const s = scored.result.scores[id];
                     const guest = isGuest(id);
                     return (
                       <tr key={id}>
@@ -504,7 +617,7 @@ export function NewGame() {
         </Card>
       )}
 
-      {previewOk && !hasMember && (
+      {scored && !hasMember && (
         <Alert kind="danger">
           Everyone at this table is a guest, so there would be nothing to record. Seat at
           least one member.

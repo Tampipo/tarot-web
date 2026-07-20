@@ -60,9 +60,14 @@ model Season {
 model Game {
   id          String   @id @default(cuid())
   playedAt    DateTime @default(now())
-  contract    String
-  oudlers     Int
-  pointsMade  Int
+  // "standard" = someone took, scored by contract. "enculette" = nobody wanted
+  // it, so everyone plays for themselves and the aim inverts: take as few card
+  // points as possible. An enculette has no contract, taker or bonuses, which
+  // is why all of those are nullable.
+  mode        String   @default("standard")
+  contract    String?
+  oudlers     Int?
+  pointsMade  Int?
   // Seats at the table (3–5). Stored because guest seats produce no GamePlayer
   // row, so players.length alone would under-report the real table size.
   numPlayers  Int
@@ -71,7 +76,7 @@ model Game {
   // Size only: the bonus always goes to whichever camp won the deal.
   poignee     String   @default("none") // none | simple | double | triple
   misere      String   @default("none") // none | attack | defense
-  baseScore   Int
+  baseScore   Int?
 
   seasonId    String
   season      Season  @relation(fields: [seasonId], references: [id])
@@ -105,6 +110,10 @@ model GamePlayer {
   // Float, not Int: two people sharing a seat take half of it each, and a seat
   // worth an odd number doesn't halve evenly. Rounding would break the zero-sum.
   score  Float
+  // Enculette only: the card points this seat took, which is what its score was
+  // derived from (91 − this). Both occupants of a shared seat carry the seat's
+  // count, since they played the hand together. Null for a standard deal.
+  cardPoints Int?
 
   // Set on both rows when two people shared one seat — each points at the
   // other. Null for a normal seat, and also when the other half was a guest

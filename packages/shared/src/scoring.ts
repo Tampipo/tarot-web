@@ -1,8 +1,11 @@
 import {
   CONTRACT_MULTIPLIER,
+  DECK_POINTS,
   POIGNEE_VALUE,
   SIDE_SIGN,
   TARGET_BY_OUDLERS,
+  type EnculetteInput,
+  type EnculetteResult,
   type GameInput,
   type GameResult,
 } from "./types";
@@ -11,37 +14,25 @@ import {
 export class ScoringError extends Error {}
 
 /**
- * Validate a deal and reject anything the score formula can't represent.
- * Runs on the server before persisting and is safe to reuse on the client.
+ * The table itself: a legal number of seats, nobody seated twice, and coherent
+ * sharing. Common to both a normal deal and an enculette, which differ only in
+ * how the seats are scored.
+ *
+ * A shared seat still holds exactly one hand, so its two occupants must be a
+ * genuine pair from outside the table: nobody sits twice, nobody shares two
+ * seats. Without this the halves would double-count someone.
  */
-export function validateGame(input: GameInput): void {
-  const n = input.playerIds.length;
+function validateSeats(playerIds: string[], splitWith?: Record<string, string>): void {
+  const n = playerIds.length;
   if (n < 3 || n > 5) {
     throw new ScoringError("A game must have between 3 and 5 players.");
   }
-  if (new Set(input.playerIds).size !== n) {
+  if (new Set(playerIds).size !== n) {
     throw new ScoringError("The same player was selected more than once.");
   }
-  if (!input.playerIds.includes(input.takerId)) {
-    throw new ScoringError("The taker must be one of the players.");
-  }
-  if (input.partnerId !== null) {
-    if (n !== 5) {
-      throw new ScoringError("A partner can only be called in a 5-player game.");
-    }
-    if (!input.playerIds.includes(input.partnerId)) {
-      throw new ScoringError("The partner must be one of the players.");
-    }
-    if (input.partnerId === input.takerId) {
-      throw new ScoringError("The partner must be different from the taker.");
-    }
-  }
-  // A shared seat still holds exactly one hand, so its two occupants must be a
-  // genuine pair from outside the table: nobody sits twice, nobody shares two
-  // seats. Without this the halves would double-count someone.
-  const seated = new Set(input.playerIds);
+  const seated = new Set(playerIds);
   const sharers = new Set<string>();
-  for (const [seatId, coId] of Object.entries(input.splitWith ?? {})) {
+  for (const [seatId, coId] of Object.entries(splitWith ?? {})) {
     if (!seated.has(seatId)) {
       throw new ScoringError("A shared seat must be one of the players.");
     }
@@ -55,6 +46,29 @@ export function validateGame(input: GameInput): void {
       throw new ScoringError("The same player cannot share two seats.");
     }
     sharers.add(coId);
+  }
+}
+
+/**
+ * Validate a deal and reject anything the score formula can't represent.
+ * Runs on the server before persisting and is safe to reuse on the client.
+ */
+export function validateGame(input: GameInput): void {
+  validateSeats(input.playerIds, input.splitWith);
+  const n = input.playerIds.length;
+  if (!input.playerIds.includes(input.takerId)) {
+    throw new ScoringError("The taker must be one of the players.");
+  }
+  if (input.partnerId !== null) {
+    if (n !== 5) {
+      throw new ScoringError("A partner can only be called in a 5-player game.");
+    }
+    if (!input.playerIds.includes(input.partnerId)) {
+      throw new ScoringError("The partner must be one of the players.");
+    }
+    if (input.partnerId === input.takerId) {
+      throw new ScoringError("The partner must be different from the taker.");
+    }
   }
   if (!Number.isInteger(input.oudlers) || input.oudlers < 0 || input.oudlers > 3) {
     throw new ScoringError("Oudlers must be an integer between 0 and 3.");
@@ -146,6 +160,54 @@ function splitSeats(
     }
   }
   return scores;
+}
+
+/**
+ * Validate an enculette. The card points are the whole deal here, so they have
+ * to account for the entire deck: a table that doesn't add up to 91 means
+ * somebody miscounted, and every score would be wrong.
+ */
+export function validateEnculette(input: EnculetteInput): void {
+  validateSeats(input.playerIds, input.splitWith);
+
+  let total = 0;
+  for (const seatId of input.playerIds) {
+    const points = input.cardPoints[seatId];
+    if (points === undefined) {
+      throw new ScoringError("Every seat needs its card points.");
+    }
+    if (!Number.isInteger(points) || points < 0 || points > DECK_POINTS) {
+      throw new ScoringError(`Card points must be an integer between 0 and ${DECK_POINTS}.`);
+    }
+    total += points;
+  }
+  if (total !== DECK_POINTS) {
+    throw new ScoringError(
+      `Card points must add up to ${DECK_POINTS} across the table (they add up to ${total}).`,
+    );
+  }
+}
+
+/**
+ * Score an enculette, where the goal is to take as *little* as possible: a seat
+ * scores the 91 − whatever it took, so a clean hand is worth the most and the
+ * player who swallowed the deal scores near nothing.
+ *
+ * Unlike a normal deal this is not zero-sum — there is no attack to pay the
+ * defence, everyone simply banks what they dodged — so a table of n seats
+ * hands out (n − 1) × 91 points between them.
+ *
+ * Shared seats halve exactly as they do elsewhere: the pair played one hand
+ * between them, so they split what that hand earned.
+ */
+export function scoreEnculette(input: EnculetteInput): EnculetteResult {
+  validateEnculette(input);
+
+  const seats: Record<string, number> = {};
+  for (const seatId of input.playerIds) {
+    seats[seatId] = DECK_POINTS - input.cardPoints[seatId];
+  }
+  return { scores: splitSeats(seats, input.splitWith) };
 }
 
 /** The per-seat split, before any seat is shared out between two people. */

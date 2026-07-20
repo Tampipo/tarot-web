@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { CONTRACTS, scoreGame, type GameInput } from "@tarot/shared";
+import { CONTRACTS, scoreEnculette, scoreGame, type GameInput } from "@tarot/shared";
 import { prisma } from "../prisma";
 import { requireAuth } from "../lib/session";
 import { currentSeason } from "../lib/seasons";
@@ -15,11 +15,30 @@ const sideSchema = z.enum(["none", "attack", "defense"]);
 const GUEST_PREFIX = "guest:";
 const isGuest = (id: string) => id.startsWith(GUEST_PREFIX);
 
-const createGameSchema = z.object({
+/** Which scoring rules a deal was played under; absent means the usual ones. */
+const modeSchema = z.object({
+  mode: z.enum(["standard", "enculette"]).default("standard"),
+});
+
+/** Seats and their sharing — common to both modes. */
+const tableSchema = {
   playerIds: z.array(z.string()).min(3).max(5),
   // Seat -> the person sharing it. Lets more than five play a five-seat deal;
   // the pair splits that seat's score. The engine rejects an incoherent map.
   splitWith: z.record(z.string(), z.string()).default({}),
+};
+
+/**
+ * An enculette: no taker, no contract, no bonuses — just what each seat took.
+ * The engine checks the counts add up to the deck's 91.
+ */
+const createEnculetteSchema = z.object({
+  ...tableSchema,
+  cardPoints: z.record(z.string(), z.number().int().min(0).max(91)),
+});
+
+const createGameSchema = z.object({
+  ...tableSchema,
   takerId: z.string(),
   partnerId: z.string().nullable().default(null),
   contract: z.enum(CONTRACTS),
@@ -51,14 +70,40 @@ function serializeGame(g: NonNullable<GameWithRelations>) {
     petitAuBout: g.petitAuBout,
     poignee: g.poignee,
     misere: g.misere,
+    mode: g.mode,
     baseScore: g.baseScore,
-    won: g.baseScore >= 0,
+    // An enculette has no attack, so nobody "won" it — hence null rather than
+    // a misleading true/false.
+    won: g.baseScore === null ? null : g.baseScore >= 0,
     // null in either role = a guest played it (see selfCalled for "alone").
     taker: g.taker ? { id: g.taker.id, name: g.taker.name } : null,
     partner: g.partner ? { id: g.partner.id, name: g.partner.name } : null,
     // Members only — guest seats were never stored.
-    players: g.players.map((p) => ({ id: p.user.id, name: p.user.name, score: p.score })),
+    players: g.players.map((p) => ({
+      id: p.user.id,
+      name: p.user.name,
+      score: p.score,
+      cardPoints: p.cardPoints,
+    })),
   };
+}
+
+/**
+ * Everyone with a hand in the deal who has an account: seated or sharing a
+ * seat, minus the guests (who are never recorded).
+ */
+function trackedIds(playerIds: string[], splitWith: Record<string, string>): string[] {
+  return [...new Set([...playerIds, ...Object.values(splitWith)].filter((id) => !isGuest(id)))];
+}
+
+/** Who shared a seat with whom, readable from either end. */
+function seatMates(splitWith: Record<string, string>): Record<string, string> {
+  const mates: Record<string, string> = {};
+  for (const [seatId, coId] of Object.entries(splitWith)) {
+    mates[seatId] = coId;
+    mates[coId] = seatId;
+  }
+  return mates;
 }
 
 export async function gameRoutes(app: FastifyInstance): Promise<void> {
@@ -75,15 +120,17 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/games", { preHandler: requireAuth }, async (req, reply) => {
-    const body = createGameSchema.parse(req.body);
+    // Mode first, so each set of rules gets the schema that fits it. An older
+    // client that sends no mode still means a standard deal.
+    const { mode } = modeSchema.parse(req.body);
+    const body =
+      mode === "enculette"
+        ? createEnculetteSchema.parse(req.body)
+        : createGameSchema.parse(req.body);
 
     // Whoever shares a seat is playing too, so they need a GamePlayer row and
     // the same "is an approved member" check as anyone seated.
-    const realIds = [
-      ...new Set(
-        [...body.playerIds, ...Object.values(body.splitWith)].filter((id) => !isGuest(id)),
-      ),
-    ];
+    const realIds = trackedIds(body.playerIds, body.splitWith);
     // Anyone may take, guests included — we simply record the members' scores
     // and the guest's share goes unstored (so the saved rows won't sum to zero).
     // A deal with nobody tracked would record nothing at all, though.
@@ -99,21 +146,46 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: "UNKNOWN_PLAYER" });
     }
 
-    // The shared engine validates the deal (guests included, so the split stays
-    // correct) and throws ScoringError (→ 400) on anything inconsistent.
-    const input: GameInput = { ...body };
-    const result = scoreGame(input);
-
-    // Who shared a seat with whom, readable from either end.
-    const seatMate: Record<string, string> = {};
-    for (const [seatId, coId] of Object.entries(body.splitWith)) {
-      seatMate[seatId] = coId;
-      seatMate[coId] = seatId;
-    }
+    const seatMate = seatMates(body.splitWith);
 
     // Deals always land in the season that is open right now (rolling it over
     // first if it has come due).
     const season = await currentSeason();
+
+    // An enculette is scored on its own terms and stores none of the contract
+    // columns — there was no contract to store.
+    if ("cardPoints" in body) {
+      const result = scoreEnculette(body);
+      const enculette = await prisma.game.create({
+        data: {
+          seasonId: season.id,
+          mode: "enculette",
+          numPlayers: body.playerIds.length,
+          selfCalled: false, // no taker at all, let alone one playing alone
+          createdById: req.authUser!.id,
+          players: {
+            create: realIds.map((uid) => {
+              const co = seatMate[uid];
+              // A shared seat played one hand, so both occupants carry its count.
+              const seatId = body.playerIds.includes(uid) ? uid : co;
+              return {
+                userId: uid,
+                score: result.scores[uid],
+                cardPoints: body.cardPoints[seatId],
+                sharesSeatWithId: co && !isGuest(co) ? co : null,
+              };
+            }),
+          },
+        },
+        include: { taker: true, partner: true, players: { include: { user: true } } },
+      });
+      return reply.code(201).send({ game: serializeGame(enculette), result });
+    }
+
+    // The shared engine validates the deal (guests included, so the split stays
+    // correct) and throws ScoringError (→ 400) on anything inconsistent.
+    const input: GameInput = { ...body };
+    const result = scoreGame(input);
 
     const game = await prisma.game.create({
       data: {
@@ -126,6 +198,7 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
         petitAuBout: body.petitAuBout,
         poignee: body.poignee,
         misere: body.misere,
+        mode: "standard",
         baseScore: result.baseScore,
         // A guest in either role stores as null; selfCalled still records
         // whether the taker had a partner at all.
