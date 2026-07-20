@@ -350,14 +350,6 @@ export function NewGame() {
             {numPlayers === 5 && (
               <Field label="Partner">
                 <div className="stack" style={{ gap: 8 }}>
-                  <label className="row" style={{ gap: 8, cursor: "pointer" }}>
-                    <span className="muted">Taker plays alone</span>
-                    <input
-                      type="checkbox"
-                      checked={alone}
-                      onChange={(e) => setAlone(e.target.checked)}
-                    />
-                  </label>
                   {usePartner && (
                     <Select
                       placeholder="Called partner"
@@ -366,6 +358,14 @@ export function NewGame() {
                       onChange={(e) => setPartnerId(e.target.value)}
                     />
                   )}
+                  <label className="row" style={{ gap: 8, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={alone}
+                      onChange={(e) => setAlone(e.target.checked)}
+                    />
+                    <span className="muted">Taker plays alone</span>
+                  </label>
                 </div>
               </Field>
             )}
