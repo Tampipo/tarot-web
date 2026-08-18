@@ -169,9 +169,9 @@ describe("scoreEnculette", () => {
     };
   }
 
-  it("scores each seat the points it avoided", () => {
+  it("scores each seat its point difference with the rest of the table", () => {
     const r = scoreEnculette(enc());
-    expect(r.scores).toEqual({ a: 81, b: 71, c: 61, d: 60 });
+    expect(r.scores).toEqual({ a: 51, b: 11, c: -29, d: -33 });
   });
 
   it("rewards taking least — the cleanest hand scores highest", () => {
@@ -179,16 +179,30 @@ describe("scoreEnculette", () => {
     expect(r.scores.a).toBeGreaterThan(r.scores.d);
   });
 
-  it("hands out (n − 1) × 91 in total, not zero", () => {
-    expect(sum(scoreEnculette(enc()).scores)).toBe(3 * 91);
+  it("sums to zero like any other deal", () => {
+    expect(sum(scoreEnculette(enc()).scores)).toBe(0);
+  });
+
+  it("sums to zero at 3 and 5 seats, in whole numbers", () => {
+    const three = scoreEnculette({
+      playerIds: ["a", "b", "c"],
+      cardPoints: { a: 10, b: 20, c: 61 },
+    });
+    expect(three.scores).toEqual({ a: 61, b: 31, c: -92 });
+
+    const five = scoreEnculette({
+      playerIds: ["a", "b", "c", "d", "e"],
+      cardPoints: { a: 10, b: 20, c: 30, d: 16, e: 15 },
+    });
+    expect(sum(five.scores)).toBe(0);
   });
 
   it("halves a shared seat between its occupants", () => {
-    // c's seat took 30, so it is worth 61 — split, that is 30.5 each.
+    // c's seat took 30 of the 91, so it is worth −29 — split, −14.5 each.
     const r = scoreEnculette(enc({ splitWith: { c: "e" } }));
-    expect(r.scores.c).toBe(30.5);
-    expect(r.scores.e).toBe(30.5);
-    expect(sum(r.scores)).toBe(3 * 91);
+    expect(r.scores.c).toBe(-14.5);
+    expect(r.scores.e).toBe(-14.5);
+    expect(sum(r.scores)).toBe(0);
   });
 
   it("rejects a table whose card points don't add up to 91", () => {

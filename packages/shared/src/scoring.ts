@@ -189,13 +189,18 @@ export function validateEnculette(input: EnculetteInput): void {
 }
 
 /**
- * Score an enculette, where the goal is to take as *little* as possible: a seat
- * scores the 91 − whatever it took, so a clean hand is worth the most and the
- * player who swallowed the deal scores near nothing.
+ * Score an enculette, where the goal is to take as *little* as possible.
  *
- * Unlike a normal deal this is not zero-sum — there is no attack to pay the
- * defence, everyone simply banks what they dodged — so a table of n seats
- * hands out (n − 1) × 91 points between them.
+ * A seat settles the point difference with every other seat, which is what
+ * makes the table zero-sum:
+ *
+ *     seat = Σⱼ (pointsⱼ − pointsᵢ) = 91 − n · pointsᵢ
+ *
+ * Summing over n seats: 91n − n·91 = 0. Equivalently, a seat scores n times how
+ * far under the table's fair share of 91/n it kept its count — positive for a
+ * clean hand, negative for whoever swallowed the deal. The factor n is what
+ * keeps every score whole: 91/n − points would be a repeating fraction at 3 and
+ * 5 seats, and a table of those only sums to zero to within float dust.
  *
  * Shared seats halve exactly as they do elsewhere: the pair played one hand
  * between them, so they split what that hand earned.
@@ -203,9 +208,10 @@ export function validateEnculette(input: EnculetteInput): void {
 export function scoreEnculette(input: EnculetteInput): EnculetteResult {
   validateEnculette(input);
 
+  const n = input.playerIds.length;
   const seats: Record<string, number> = {};
   for (const seatId of input.playerIds) {
-    seats[seatId] = DECK_POINTS - input.cardPoints[seatId];
+    seats[seatId] = DECK_POINTS - n * input.cardPoints[seatId];
   }
   return { scores: splitSeats(seats, input.splitWith) };
 }
