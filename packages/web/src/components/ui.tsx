@@ -119,6 +119,37 @@ export function SideToggle({
   );
 }
 
+/* ---- Modal ------------------------------------------------------------------ */
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title?: ReactNode;
+  children: ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          className="btn btn-ghost icon-btn modal-close"
+          aria-label="Close"
+          onClick={onClose}
+        >
+          ✕
+        </button>
+        {title && <h2 className="card-title" style={{ marginBottom: 18 }}>{title}</h2>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /* ---- Misc ----------------------------------------------------------------- */
 export function Alert({
   kind,

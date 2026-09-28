@@ -1,9 +1,44 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { CONTRACTS, scoreEnculette, scoreGame, type GameInput } from "@tarot/shared";
+import { Prisma } from "@prisma/client";
+import {
+  applyHouseRule,
+  CONTRACTS,
+  scoreEnculette,
+  scoreGame,
+  type GameInput,
+  type HouseRuleAdjustment,
+  type ScoringHouseRuleId,
+} from "@tarot/shared";
 import { prisma } from "../prisma";
 import { requireAuth } from "../lib/session";
 import { currentSeason } from "../lib/seasons";
+
+const SCORING_HOUSE_RULE_IDS: readonly ScoringHouseRuleId[] = [
+  "double-points",
+  "big-dog-no-partner",
+  "taker-gamble",
+  "cheating-allowed",
+  "blind-bidder",
+  "great-equalizer",
+];
+
+/**
+ * What the client reports about the roulette's active house rule. Only the
+ * six rules that actually change scoring are accepted here — the flavor-only
+ * ones (nothing-happens, forced-petite, the Excuse rule, pass-left) have
+ * nothing for the API to do, so the client simply doesn't send them.
+ *
+ * Neither the gamble's coin nor the equalizer's ranking are taken from the
+ * client: `gamble: true` just means the taker opted in, and both the flip and
+ * the season standings are resolved server-side so neither can be rigged from
+ * a browser console.
+ */
+const houseRuleRequestSchema = z.object({
+  id: z.enum(SCORING_HOUSE_RULE_IDS as [ScoringHouseRuleId, ...ScoringHouseRuleId[]]),
+  gamble: z.boolean().optional(),
+  cheatingCatches: z.record(z.string(), z.number().int().min(0).max(20)).optional(),
+});
 
 const sideSchema = z.enum(["none", "attack", "defense"]);
 
@@ -47,6 +82,9 @@ const createGameSchema = z.object({
   petitAuBout: sideSchema.default("none"),
   poignee: z.enum(["none", "simple", "double", "triple"]).default("none"),
   misere: sideSchema.default("none"),
+  // Absent = play it by the book. Enculette has no taker or contract, so none
+  // of these rules apply there — the schema simply doesn't offer the field.
+  houseRule: houseRuleRequestSchema.optional(),
 });
 
 type GameWithRelations = Awaited<ReturnType<typeof loadGame>>;
@@ -185,7 +223,40 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
     // The shared engine validates the deal (guests included, so the split stays
     // correct) and throws ScoringError (→ 400) on anything inconsistent.
     const input: GameInput = { ...body };
-    const result = scoreGame(input);
+    const rawResult = scoreGame(input);
+
+    // The gamble's coin gets flipped here, never trusted from the client — a
+    // browser console could otherwise always call "doubled".
+    let gambleOutcome: "doubled" | "zeroed" | undefined;
+    if (body.houseRule?.id === "taker-gamble" && body.houseRule.gamble) {
+      gambleOutcome = Math.random() < 0.5 ? "doubled" : "zeroed";
+    }
+
+    // Same idea for the equalizer's ranking: who's up and who's down this
+    // season is read fresh from the DB, not accepted from the client. Missing
+    // from the sum entirely (nobody's played them yet this season) counts as
+    // a season total of zero.
+    let seasonRanking: string[] | undefined;
+    if (body.houseRule?.id === "great-equalizer") {
+      const totals = await prisma.$queryRaw<{ id: string; total: number }[]>`
+        SELECT gp."userId" as id, SUM(gp.score)::float8 as total
+        FROM "GamePlayer" gp
+        JOIN "Game" g ON g.id = gp."gameId"
+        WHERE gp."userId" IN (${Prisma.join(realIds)}) AND g."seasonId" = ${season.id}
+        GROUP BY gp."userId"`;
+      const totalById = new Map(totals.map((t) => [t.id, t.total]));
+      seasonRanking = [...realIds].sort(
+        (a, b) => (totalById.get(b) ?? 0) - (totalById.get(a) ?? 0),
+      );
+    }
+
+    const adjustment: HouseRuleAdjustment | undefined = body.houseRule && {
+      id: body.houseRule.id,
+      cheatingCatches: body.houseRule.cheatingCatches,
+      gambleOutcome,
+      seasonRanking,
+    };
+    const result = applyHouseRule(rawResult, input, adjustment);
 
     const game = await prisma.game.create({
       data: {
@@ -205,7 +276,8 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
         takerId: isGuest(body.takerId) ? null : body.takerId,
         partnerId: body.partnerId && !isGuest(body.partnerId) ? body.partnerId : null,
         createdById: req.authUser!.id,
-        // Only member seats are persisted; guests leave no trace.
+        // Only member seats are persisted; guests leave no trace — including
+        // whatever a house rule adjusted their score to, since it's never read.
         players: {
           create: realIds.map((uid) => {
             // Seat-sharing is symmetric, so store it from both sides — but only
@@ -222,6 +294,6 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
       include: { taker: true, partner: true, players: { include: { user: true } } },
     });
 
-    return reply.code(201).send({ game: serializeGame(game), result });
+    return reply.code(201).send({ game: serializeGame(game), result, gambleOutcome });
   });
 }

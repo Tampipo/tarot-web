@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  applyHouseRule,
   CONTRACT_LABEL,
   CONTRACTS,
   DECK_POINTS,
@@ -12,7 +13,9 @@ import {
   type EnculetteResult,
   type GameInput,
   type GameResult,
+  type HouseRuleAdjustment,
   type Poignee,
+  type ScoringHouseRuleId,
   type Side,
 } from "@tarot/shared";
 import { Link } from "react-router-dom";
@@ -24,12 +27,15 @@ import {
   Card,
   Field,
   Input,
+  Modal,
   Select,
   SideToggle,
   Spinner,
 } from "../components/ui";
+import { Roulette } from "../components/Roulette";
 import { scoreClass, signed } from "../lib/format";
-import type { Player } from "../lib/types";
+import type { SpunHouseRule } from "../lib/houseRules";
+import type { Player, ScoreRow } from "../lib/types";
 
 const POIGNEE_OPTIONS = [
   { value: "none", label: "No poignée" },
@@ -91,6 +97,30 @@ function loadStoredTable(): StoredTable | null {
   }
 }
 
+// The house rule a spin landed on for the next deal — flavor only, not read
+// by the scoring engine — cached the same way the table seating is, so it
+// survives navigating away and coming back.
+const HOUSE_RULE_STORAGE_KEY = "tarot:newgame-house-rule";
+
+function loadHouseRule(): SpunHouseRule | null {
+  try {
+    const raw = localStorage.getItem(HOUSE_RULE_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as SpunHouseRule) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What the API expects for the active house rule — `gamble` (did the taker
+ * opt in?) rather than the actual coin flip, which only the server resolves.
+ */
+type HouseRuleRequest = {
+  id: ScoringHouseRuleId;
+  gamble?: boolean;
+  cheatingCatches?: Record<string, number>;
+};
+
 export function NewGame() {
   const { isAdmin } = useAuth();
   const [players, setPlayers] = useState<Player[] | null>(null); // null = loading
@@ -127,6 +157,37 @@ export function NewGame() {
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [rouletteOpen, setRouletteOpen] = useState(false);
+  const [activeRule, setActiveRule] = useState<SpunHouseRule | null>(() => loadHouseRule());
+  // Season standings — fetched once, not re-checked live, since they're only
+  // read at the moment of a spin or a save. Powers "Forced Petite" (the
+  // overall leader) and "Redistribution" (tonight's seated players ranked).
+  const [standings, setStandings] = useState<ScoreRow[]>([]);
+  const leaderName = standings[0]?.name ?? null;
+  // "Cheating Allowed": tracked player id -> times caught this deal.
+  const [cheatingCatches, setCheatingCatches] = useState<Record<string, number>>({});
+  // "Taker's Gamble": asked right before saving, not while previewing — the
+  // whole point is deciding after seeing the deal's normal result.
+  const [gambleOpen, setGambleOpen] = useState(false);
+
+  function applyRouletteResult(rule: SpunHouseRule) {
+    setActiveRule(rule);
+    try {
+      localStorage.setItem(HOUSE_RULE_STORAGE_KEY, JSON.stringify(rule));
+    } catch {
+      // Storage may be unavailable — the banner just won't survive a reload.
+    }
+  }
+
+  function clearActiveRule() {
+    setActiveRule(null);
+    try {
+      localStorage.removeItem(HOUSE_RULE_STORAGE_KEY);
+    } catch {
+      // Nothing to clean up if it was never stored.
+    }
+  }
+
   useEffect(() => {
     api.get<Player[]>("/players").then((r) => {
       setPlayers(r.data);
@@ -137,6 +198,11 @@ export function NewGame() {
       setSlots((prev) => prev.map((id) => (stillValid(id) ? id : "")));
       setSharedWith((prev) => prev.map((id) => (stillValid(id) ? id : "")));
     });
+    // Sorted by total desc — rows[0] is the current leader.
+    api
+      .get<ScoreRow[]>("/scoreboard")
+      .then((r) => setStandings(r.data))
+      .catch(() => setStandings([]));
   }, []);
 
   // Cache who's seated so the next deal — even after navigating away or
@@ -235,6 +301,72 @@ export function NewGame() {
   // A deal with no members would record nothing at all.
   const hasMember = everyone.some((id) => !isGuest(id));
 
+  // Only currently-seated, non-guest ids count — a catch logged for someone
+  // who's since left the table is dropped rather than silently sent along.
+  const trackedCheatingCatches = useMemo(() => {
+    const trackedIds = new Set(everyone.filter((id) => !isGuest(id)));
+    const out: Record<string, number> = {};
+    for (const [id, count] of Object.entries(cheatingCatches)) {
+      if (trackedIds.has(id) && count > 0) out[id] = count;
+    }
+    return out;
+  }, [cheatingCatches, everyone]);
+
+  // Tonight's tracked seats with their season total, for "Redistribution" —
+  // only these people can receive that transfer, since only they get a
+  // GamePlayer row for this deal. Missing from the season counts as 0.
+  const seatedStandings = useMemo(() => {
+    const trackedIds = [...new Set(everyone.filter((id) => !isGuest(id)))];
+    return trackedIds.map((id) => ({
+      id,
+      name: nameOf(id),
+      total: standings.find((s) => s.id === id)?.total ?? 0,
+    }));
+  }, [everyone, standings]);
+
+  // Best season total to worst, among tonight's tracked seats.
+  const seasonRanking = useMemo(
+    () => [...seatedStandings].sort((a, b) => b.total - a.total).map((p) => p.id),
+    [seatedStandings],
+  );
+
+  // The deterministic house-rule effects the live preview can already show —
+  // "taker-gamble" excluded, since its coin only flips once you commit to it.
+  const previewAdjustment: HouseRuleAdjustment | undefined = useMemo(() => {
+    const ruleId = activeRule?.id;
+    switch (ruleId) {
+      case "double-points":
+      case "big-dog-no-partner":
+      case "blind-bidder":
+        return { id: ruleId };
+      case "cheating-allowed":
+        return { id: ruleId, cheatingCatches: trackedCheatingCatches };
+      case "great-equalizer":
+        return { id: ruleId, seasonRanking };
+      default:
+        return undefined;
+    }
+  }, [activeRule?.id, trackedCheatingCatches, seasonRanking]);
+
+  function buildHouseRulePayload(gamble?: boolean): HouseRuleRequest | undefined {
+    const ruleId = activeRule?.id;
+    switch (ruleId) {
+      case "double-points":
+      case "big-dog-no-partner":
+      case "blind-bidder":
+      case "great-equalizer":
+        // The equalizer's ranking isn't sent — the API recomputes it from the
+        // DB itself, the same way it resolves the gamble's coin.
+        return { id: ruleId };
+      case "cheating-allowed":
+        return { id: ruleId, cheatingCatches: trackedCheatingCatches };
+      case "taker-gamble":
+        return { id: ruleId, gamble };
+      default:
+        return undefined;
+    }
+  }
+
   // Build a GameInput and score it live. Any inconsistency (unfilled slot, bad
   // partner…) surfaces as `null` so the preview and Save button stay disabled.
   const input: GameInput | null = useMemo(() => {
@@ -300,31 +432,65 @@ export function NewGame() {
   const preview: Preview | null = useMemo(() => {
     try {
       if (encInput) return { kind: "enculette", result: scoreEnculette(encInput) };
-      if (input) return { kind: "standard", result: scoreGame(input) };
+      if (input) {
+        const raw = scoreGame(input);
+        return { kind: "standard", result: applyHouseRule(raw, input, previewAdjustment) };
+      }
       return null;
     } catch (e) {
       return e instanceof ScoringError ? { kind: "error", message: e.message } : null;
     }
-  }, [input, encInput]);
+  }, [input, encInput, previewAdjustment]);
 
   // Preview still scores an all-guest table (the maths is fine); it just can't
   // be saved, since there'd be no score to record for anyone.
   const scored = preview && preview.kind !== "error" ? preview : null;
   const canSave = Boolean(scored && hasMember);
 
-  async function save() {
-    const payload = encInput ? { mode: "enculette", ...encInput } : input;
+  // "Taker's Gamble" is decided right before saving, not while previewing —
+  // clicking Save opens that dialog instead of saving outright; every other
+  // rule (or none) saves immediately.
+  function handleSaveClick() {
+    if (!enculette && activeRule?.id === "taker-gamble") {
+      setGambleOpen(true);
+      return;
+    }
+    performSave();
+  }
+
+  async function performSave(gamble?: boolean) {
+    const payload = encInput
+      ? { mode: "enculette", ...encInput }
+      : input
+        ? { ...input, houseRule: buildHouseRulePayload(gamble) }
+        : null;
     if (!payload) return;
     setError(null);
     setSaving(true);
+    setGambleOpen(false);
     try {
-      await api.post("/games", payload);
+      const { data } = await api.post<{
+        result: GameResult | EnculetteResult;
+        gambleOutcome?: "doubled" | "zeroed";
+      }>("/games", payload);
+      // The server's actual result, not the client preview — the gamble's
+      // coin flip only exists once it comes back. "baseScore" only exists on
+      // a standard deal's result, never an enculette's.
+      const standardResult = "baseScore" in data.result ? data.result : null;
+      const gambleNote =
+        data.gambleOutcome === "doubled"
+          ? " 🎲 Gambled it — doubled!"
+          : data.gambleOutcome === "zeroed"
+            ? " 🎲 Gambled it — wiped to zero."
+            : "";
       setSaved(
-        preview?.kind === "standard"
-          ? `Game saved — attack ${preview.result.won ? "won" : "lost"} ${Math.abs(preview.result.baseScore)} points.`
+        standardResult
+          ? `Game saved — attack ${standardResult.won ? "won" : "lost"} ${Math.abs(standardResult.baseScore)} points.${gambleNote}`
           : "Game saved.",
       );
-      // Keep the table seated for the next deal; reset only the deal details.
+      // Keep the table seated for the next deal; reset the deal details and
+      // whatever the roulette landed on — it was for *this* game, not every
+      // game from here on.
       setTakerId("");
       setPartnerId("");
       setContract("");
@@ -335,6 +501,17 @@ export function NewGame() {
       setMisere("none");
       setAlone(false);
       setCardPoints((prev) => prev.map(() => ""));
+      setCheatingCatches({});
+      clearActiveRule();
+      // Standings just moved (this game's own scores, and possibly the
+      // equalizer's transfer) — refetch so the next spin/preview isn't
+      // working off numbers from before this save.
+      api
+        .get<ScoreRow[]>("/scoreboard")
+        .then((r) => setStandings(r.data))
+        .catch(() => {
+          // Keep the previous standings rather than blanking a working cache.
+        });
     } catch (err) {
       setError(errorMessage(err, "Could not save the game"));
     } finally {
@@ -364,6 +541,33 @@ export function NewGame() {
 
   return (
     <div className="stack">
+      {activeRule && (
+        <Alert kind="success">
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <span>
+              {activeRule.emoji} <strong>House rule:</strong> {activeRule.label} —{" "}
+              {activeRule.description}
+            </span>
+            <Button variant="ghost" className="btn-sm" onClick={clearActiveRule}>
+              Clear
+            </Button>
+          </div>
+        </Alert>
+      )}
+
+      <div className="row" style={{ justifyContent: "flex-end" }}>
+        <Button variant="default" onClick={() => setRouletteOpen(true)}>
+          🎲 Launch the roulette for next game
+        </Button>
+      </div>
+
+      <Modal open={rouletteOpen} onClose={() => setRouletteOpen(false)} title="House rule roulette">
+        <Roulette
+          context={{ seatedNames: chosen.map(nameOf), leaderName, seatedStandings }}
+          onResult={applyRouletteResult}
+        />
+      </Modal>
+
       <Card title="New game" subtitle="Record a deal and split the score.">
         <div className="stack">
           {/* Which rules — the whole form below changes with it. */}
@@ -599,6 +803,43 @@ export function NewGame() {
                   />
                 </Field>
               </div>
+
+              {/* House rule: cheating is allowed, but each catch costs −50. */}
+              {activeRule?.id === "cheating-allowed" && (
+                <>
+                  <hr className="hr" />
+                  <Field label="Caught cheating (−50 each)">
+                    <div
+                      className="grid"
+                      style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+                    >
+                      {[...new Set(everyone)]
+                        .filter((id) => !isGuest(id))
+                        .map((id) => (
+                          <div
+                            key={id}
+                            className="row"
+                            style={{ justifyContent: "space-between", gap: 8 }}
+                          >
+                            <span>{nameOf(id)}</span>
+                            <Input
+                              type="number"
+                              min={0}
+                              max={20}
+                              style={{ width: 72 }}
+                              value={cheatingCatches[id] ?? ""}
+                              placeholder="0"
+                              onChange={(e) => {
+                                const v = e.target.value === "" ? 0 : Number(e.target.value);
+                                setCheatingCatches((prev) => ({ ...prev, [id]: v }));
+                              }}
+                            />
+                          </div>
+                        ))}
+                    </div>
+                  </Field>
+                </>
+              )}
             </>
           )}
         </div>
@@ -692,10 +933,27 @@ export function NewGame() {
       {saved && <Alert kind="success">{saved}</Alert>}
 
       <div className="row" style={{ justifyContent: "flex-end" }}>
-        <Button variant="primary" onClick={save} disabled={!canSave} loading={saving}>
+        <Button variant="primary" onClick={handleSaveClick} disabled={!canSave} loading={saving}>
           Save game
         </Button>
       </div>
+
+      <Modal open={gambleOpen} onClose={() => setGambleOpen(false)} title="🎲 Taker's Gamble">
+        <div className="stack">
+          <p className="muted" style={{ margin: 0 }}>
+            {takerId && nameOf(takerId)} can bet it all on a coin flip: heads doubles this
+            deal's result, tails wipes it to zero.
+          </p>
+          <div className="row" style={{ justifyContent: "flex-end", gap: 10 }}>
+            <Button variant="ghost" onClick={() => performSave(false)}>
+              Play it safe
+            </Button>
+            <Button variant="primary" onClick={() => performSave(true)}>
+              Gamble it!
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
