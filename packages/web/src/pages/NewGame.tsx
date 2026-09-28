@@ -56,20 +56,63 @@ const guestId = (seat: number) => `${GUEST_PREFIX}${seat}`;
 /** The guest marker for the *second* half of a shared seat. */
 const shareGuestId = (seat: number) => `${GUEST_PREFIX}share${seat}`;
 
+// Who's seated persists across navigation/reloads, so only the deal itself
+// (taker, contract, bonuses...) needs re-entering between games at the same
+// table — that already resets on save, further down.
+const TABLE_STORAGE_KEY = "tarot:newgame-table";
+
+type StoredTable = {
+  numPlayers: number;
+  slots: string[];
+  shared: boolean[];
+  sharedWith: string[];
+};
+
+function loadStoredTable(): StoredTable | null {
+  try {
+    const raw = localStorage.getItem(TABLE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredTable;
+    const n = parsed.numPlayers;
+    if (
+      (n !== 3 && n !== 4 && n !== 5) ||
+      !Array.isArray(parsed.slots) ||
+      parsed.slots.length !== n ||
+      !Array.isArray(parsed.shared) ||
+      parsed.shared.length !== n ||
+      !Array.isArray(parsed.sharedWith) ||
+      parsed.sharedWith.length !== n
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export function NewGame() {
   const { isAdmin } = useAuth();
   const [players, setPlayers] = useState<Player[] | null>(null); // null = loading
-  const [numPlayers, setNumPlayers] = useState(4);
-  const [slots, setSlots] = useState<string[]>(["", "", "", ""]);
+  const [numPlayers, setNumPlayers] = useState(() => loadStoredTable()?.numPlayers ?? 4);
+  const [slots, setSlots] = useState<string[]>(
+    () => loadStoredTable()?.slots ?? ["", "", "", ""],
+  );
   // Per seat: whether two people are sharing it, and who the second one is.
   // Kept as two arrays so ticking the box can reveal an empty picker without
   // the seat counting as shared until someone is actually chosen.
-  const [shared, setShared] = useState<boolean[]>([false, false, false, false]);
-  const [sharedWith, setSharedWith] = useState<string[]>(["", "", "", ""]);
+  const [shared, setShared] = useState<boolean[]>(
+    () => loadStoredTable()?.shared ?? [false, false, false, false],
+  );
+  const [sharedWith, setSharedWith] = useState<string[]>(
+    () => loadStoredTable()?.sharedWith ?? ["", "", "", ""],
+  );
   // Enculette: nobody took, so there's no contract to fill in — just the card
   // points each seat ended up with, one entry per seat.
   const [enculette, setEnculette] = useState(false);
-  const [cardPoints, setCardPoints] = useState<string[]>(["", "", "", ""]);
+  const [cardPoints, setCardPoints] = useState<string[]>(() =>
+    Array(loadStoredTable()?.numPlayers ?? 4).fill(""),
+  );
   const [takerId, setTakerId] = useState("");
   const [alone, setAlone] = useState(false);
   const [partnerId, setPartnerId] = useState("");
@@ -85,8 +128,30 @@ export function NewGame() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<Player[]>("/players").then((r) => setPlayers(r.data));
+    api.get<Player[]>("/players").then((r) => {
+      setPlayers(r.data);
+      // Drop any cached seat that no longer names a real player (deleted
+      // account) — guest markers are seat-local and always still valid.
+      const validIds = new Set(r.data.map((p) => p.id));
+      const stillValid = (id: string) => !id || isGuest(id) || validIds.has(id);
+      setSlots((prev) => prev.map((id) => (stillValid(id) ? id : "")));
+      setSharedWith((prev) => prev.map((id) => (stillValid(id) ? id : "")));
+    });
   }, []);
+
+  // Cache who's seated so the next deal — even after navigating away or
+  // reloading — starts with the table already set.
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        TABLE_STORAGE_KEY,
+        JSON.stringify({ numPlayers, slots, shared, sharedWith }),
+      );
+    } catch {
+      // Storage may be unavailable (private browsing, quota) — the cache is
+      // a convenience, not a requirement.
+    }
+  }, [numPlayers, slots, shared, sharedWith]);
 
   function setTableSize(n: number) {
     setNumPlayers(n);
