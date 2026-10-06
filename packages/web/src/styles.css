@@ -746,6 +746,14 @@ table.tbl {
   border-radius: 2px;
   animation: confetti-fall 1.1s ease-out forwards;
 }
+.confetti-emoji {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  font-size: 1.3rem;
+  line-height: 1;
+  color: #dc2626;
+}
 @keyframes confetti-fall {
   0% {
     transform: translate3d(0, -10px, 0) rotate(0deg);

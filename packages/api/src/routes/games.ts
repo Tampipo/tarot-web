@@ -19,7 +19,6 @@ const SCORING_HOUSE_RULE_IDS: readonly ScoringHouseRuleId[] = [
   "big-dog-no-partner",
   "taker-gamble",
   "cheating-allowed",
-  "blind-bidder",
   "great-equalizer",
 ];
 

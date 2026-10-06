@@ -337,7 +337,6 @@ export function NewGame() {
     switch (ruleId) {
       case "double-points":
       case "big-dog-no-partner":
-      case "blind-bidder":
         return { id: ruleId };
       case "cheating-allowed":
         return { id: ruleId, cheatingCatches: trackedCheatingCatches };
@@ -353,7 +352,6 @@ export function NewGame() {
     switch (ruleId) {
       case "double-points":
       case "big-dog-no-partner":
-      case "blind-bidder":
       case "great-equalizer":
         // The equalizer's ranking isn't sent — the API recomputes it from the
         // DB itself, the same way it resolves the gamble's coin.
@@ -545,8 +543,8 @@ export function NewGame() {
         <Alert kind="success">
           <div className="row" style={{ justifyContent: "space-between" }}>
             <span>
-              {activeRule.emoji} <strong>House rule:</strong> {activeRule.label} —{" "}
-              {activeRule.description}
+              {activeRule.emoji} <strong>House rule:</strong> {activeRule.label}
+              {activeRule.description && <> — {activeRule.description}</>}
             </span>
             <Button variant="ghost" className="btn-sm" onClick={clearActiveRule}>
               Clear
