@@ -45,16 +45,16 @@ function rankSeatedStandings(standings: RouletteContext["seatedStandings"]): typ
 
 // Flavor rules for the roulette. Landing on one doesn't touch the scoring
 // engine, except where noted. Weights are out of 100, so they read directly as
-// percentages: "Nothing Happens" lands half the time, "Redistribution" is the
-// rare 2%, "Cheating Allowed" is at 8%, and the eight remaining rules split
-// the last 40% at 5% each.
+// percentages: "Nothing Happens" is down to 45% to make room for "Mystery
+// Taker" at 10%, "Redistribution" is the rare 2%, "Cheating Allowed" is at
+// 8%, and the seven remaining rules split the last 35% at 5% each.
 export const HOUSE_RULES: HouseRule[] = [
   {
     id: "nothing-happens",
     emoji: "😐",
     label: "Nothing Happens",
     description: "No twist this time — play a normal deal.",
-    weight: 50,
+    weight: 45,
   },
   {
     id: "forced-petite",
@@ -118,7 +118,7 @@ export const HOUSE_RULES: HouseRule[] = [
     label: "Mystery Taker",
     description:
       "This deal is Garde Sans, and nobody knows who's taking yet — pass the phone around the table and find out.",
-    weight: 5,
+    weight: 10,
     actionLabel: "Let's go!",
   },
   {
