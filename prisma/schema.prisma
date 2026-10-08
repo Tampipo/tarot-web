@@ -65,6 +65,11 @@ model Game {
   // points as possible. An enculette has no contract, taker or bonuses, which
   // is why all of those are nullable.
   mode        String   @default("standard")
+  // What the roulette landed on for this deal — one of HOUSE_RULE_IDS in
+  // @tarot/shared, table-talk rules included, so the stats can compare deals by
+  // rule. "nothing-happens" is also the plain, by-the-book deal: a deal with no
+  // spin stores it, and so does every deal from before the roulette existed.
+  houseRule   String   @default("nothing-happens")
   contract    String?
   oudlers     Int?
   pointsMade  Int?

@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../contexts/auth";
 import { Button, Card, Spinner } from "../components/ui";
 import { dateLabel, scoreClass, signed } from "../lib/format";
+import { HOUSE_RULES } from "../lib/houseRules";
 import type { GameDTO } from "../lib/types";
 
 export function Home() {
@@ -51,6 +52,21 @@ export function Home() {
 }
 
 /**
+ * The roulette rule a deal was played under. A normal deal shows nothing, so
+ * the list only flags the deals that had a twist.
+ */
+function HouseRuleBadge({ id }: { id: string }) {
+  if (id === "nothing-happens") return null;
+  const rule = HOUSE_RULES.find((r) => r.id === id);
+  // A rule since taken off the wheel was still played: fall back to its raw id.
+  return (
+    <span className="badge" title={rule?.description || undefined}>
+      {rule ? `${rule.emoji} ${rule.label}` : id}
+    </span>
+  );
+}
+
+/**
  * An enculette has no taker, contract or oudlers to show — the story of the
  * deal is who managed to take the least, so that's what leads.
  */
@@ -88,6 +104,7 @@ function EnculetteRow({ game }: { game: GameDTO }) {
         </div>
       </div>
       <div className="row" style={{ gap: 10 }}>
+        <HouseRuleBadge id={game.houseRule} />
         <span className="badge">Enculette</span>
         {best && (
           <span
@@ -138,6 +155,7 @@ export function GameRow({ game }: { game: GameDTO }) {
         </div>
       </div>
       <div className="row" style={{ gap: 10 }}>
+        <HouseRuleBadge id={game.houseRule} />
         <span className="badge">{game.won ? "Won" : "Lost"}</span>
         <span
           className={scoreClass(headline)}
