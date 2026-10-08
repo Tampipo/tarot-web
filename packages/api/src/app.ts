@@ -13,6 +13,7 @@ import { playerRoutes } from "./routes/players";
 import { gameRoutes } from "./routes/games";
 import { scoreboardRoutes } from "./routes/scoreboard";
 import { seasonRoutes } from "./routes/seasons";
+import { medalRoutes } from "./routes/medals";
 
 /**
  * Build the fully wired Fastify app WITHOUT listening. index.ts calls listen();
@@ -58,6 +59,7 @@ export async function buildApp(opts: { logger?: boolean } = {}) {
   await app.register(gameRoutes);
   await app.register(scoreboardRoutes);
   await app.register(seasonRoutes);
+  await app.register(medalRoutes);
 
   return app;
 }

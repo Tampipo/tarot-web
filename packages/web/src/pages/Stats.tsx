@@ -3,7 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/auth";
 import { Button, Card, Select, Spinner, Tile } from "../components/ui";
+import { MedalStrip } from "../components/Medals";
 import { scoreClass, signed } from "../lib/format";
+import { standingsOf, tallyOf, type MedalsDTO } from "../lib/medals";
 import type { Player, ScoreRow, Season } from "../lib/types";
 
 const MAX_SUGGESTIONS = 8;
@@ -112,6 +114,9 @@ export function Stats() {
   const [rows, setRows] = useState<ScoreRow[] | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [seasons, setSeasons] = useState<Season[]>([]);
+  const [medals, setMedals] = useState<MedalsDTO | null>(null);
+  // Every closed season's medals, whatever period is selected: the tally of past seasons.
+  const [pastMedals, setPastMedals] = useState<MedalsDTO | null>(null);
   // Both live in the URL so the scoreboard can link straight to someone's
   // stats: ?player=<id> (absent = you), ?season=<id>|all (absent = in progress).
   const [searchParams, setSearchParams] = useSearchParams();
@@ -121,6 +126,7 @@ export function Stats() {
   useEffect(() => {
     api.get<Season[]>("/seasons").then((r) => setSeasons(r.data));
     api.get<Player[]>("/players").then((r) => setPlayers(r.data));
+    api.get<MedalsDTO>("/medals", { params: { season: "all" } }).then((r) => setPastMedals(r.data));
   }, []);
 
   useEffect(() => {
@@ -128,6 +134,10 @@ export function Stats() {
     api
       .get<ScoreRow[]>("/scoreboard", { params: season ? { season } : {} })
       .then((r) => setRows(r.data));
+    setMedals(null);
+    api
+      .get<MedalsDTO>("/medals", { params: season ? { season } : {} })
+      .then((r) => setMedals(r.data));
   }, [season]);
 
   // Your own stats are the point of this page — a member *is* a player, so it
@@ -160,19 +170,19 @@ export function Stats() {
 
   return (
     <div className="stack">
-      <Card
-        title={
-          <span className="row" style={{ gap: 8 }}>
-            {isMe ? "Your statistics" : (name ?? "Statistics")}
-            {isMe && <span className="badge">you</span>}
-          </span>
-        }
-        subtitle={
-          season === "all"
+      {/* Title and subtitle by hand rather than through Card's props, so the
+          player's medals can sit between them, right under the name. */}
+      <Card>
+        <h2 className="card-title row" style={{ gap: 8 }}>
+          {isMe ? "Your statistics" : (name ?? "Statistics")}
+          {isMe && <span className="badge">you</span>}
+        </h2>
+        <MedalStrip current={standingsOf(medals, playerId)} past={tallyOf(pastMedals, playerId)} />
+        <p className="card-sub">
+          {season === "all"
             ? "Every season combined."
-            : `${seasons.find((s) => (season ? s.id === season : s.current))?.name ?? "Current season"}. Search a player to compare.`
-        }
-      >
+            : `${seasons.find((s) => (season ? s.id === season : s.current))?.name ?? "Current season"}. Search a player to compare.`}
+        </p>
         <div className="row">
           <div style={{ flex: "1 1 240px" }}>
             <PlayerSearch

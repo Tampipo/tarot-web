@@ -589,6 +589,107 @@ table.tbl {
   font-size: 0.9rem;
 }
 
+/* ---- Medals --------------------------------------------------------------- */
+.medal-icons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.medal-icon-btn {
+  position: relative;
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.medal-icon-btn:hover,
+.medal-icon-btn[aria-expanded="true"] {
+  background: var(--surface-2);
+}
+.medal-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
+}
+/* Under a name on the Stats page: bigger, on a line of their own —
+   this season's places | the tally of past seasons. */
+.medal-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 6px 0 4px;
+}
+.medal-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 4px 0;
+  background: var(--border-strong);
+}
+.medal-icons-lg {
+  margin-left: 0;
+  gap: 4px;
+}
+/* How many times a past-season medal was earned, tucked in the icon's corner. */
+.medal-count {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+}
+.medal-icons-lg .medal-icon-btn {
+  font-size: 1.5rem;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+}
+.medal-bubble {
+  position: fixed;
+  z-index: 50;
+  width: max-content;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  white-space: normal;
+  font-weight: 400;
+  text-align: left;
+}
+.medal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.medal-name {
+  font-weight: 650;
+}
+.medal-value {
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.medal-tagline {
+  font-style: italic;
+  font-size: 0.9rem;
+}
+.medal-detail {
+  font-size: 0.82rem;
+}
+
 /* ---- Stat tiles ----------------------------------------------------------- */
 .tiles {
   display: grid;

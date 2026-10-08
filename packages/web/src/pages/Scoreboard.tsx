@@ -3,7 +3,9 @@ import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/auth";
 import { Card, Select, Spinner } from "../components/ui";
+import { MedalIcons } from "../components/Medals";
 import { scoreClass, seasonRange, signed } from "../lib/format";
+import { medalsOf, type MedalsDTO } from "../lib/medals";
 import type { ScoreRow, Season } from "../lib/types";
 
 const rankClass = ["gold", "silver", "bronze"];
@@ -50,6 +52,7 @@ export function Scoreboard() {
   // "" = the season in progress (the default view); "all" = across all seasons.
   const [season, setSeason] = useState<string>("");
   const [rows, setRows] = useState<ScoreRow[] | null>(null);
+  const [medals, setMedals] = useState<MedalsDTO | null>(null);
 
   useEffect(() => {
     api.get<Season[]>("/seasons").then((r) => setSeasons(r.data));
@@ -60,6 +63,10 @@ export function Scoreboard() {
     api
       .get<ScoreRow[]>("/scoreboard", { params: season ? { season } : {} })
       .then((r) => setRows(r.data));
+    setMedals(null);
+    api
+      .get<MedalsDTO>("/medals", { params: season ? { season } : {} })
+      .then((r) => setMedals(r.data));
   }, [season]);
 
   const current = seasons.find((s) => s.current);
@@ -124,6 +131,7 @@ export function Scoreboard() {
                         {r.name}
                       </Link>
                       {r.id === user?.id && <span className="muted"> (you)</span>}
+                      <MedalIcons medals={medalsOf(medals, r.id)} />
                     </td>
                     <td className="num">
                       <span className={scoreClass(r.total)}>{signed(r.total)}</span>
