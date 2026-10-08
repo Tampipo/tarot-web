@@ -4,29 +4,21 @@ import { Prisma } from "@prisma/client";
 import {
   applyHouseRule,
   CONTRACTS,
+  HOUSE_RULE_IDS,
   scoreEnculette,
   scoreGame,
   type GameInput,
   type HouseRuleAdjustment,
-  type ScoringHouseRuleId,
 } from "@tarot/shared";
 import { prisma } from "../prisma";
 import { requireAuth } from "../lib/session";
 import { currentSeason } from "../lib/seasons";
 
-const SCORING_HOUSE_RULE_IDS: readonly ScoringHouseRuleId[] = [
-  "double-points",
-  "big-dog-no-partner",
-  "taker-gamble",
-  "cheating-allowed",
-  "great-equalizer",
-];
-
 /**
- * What the client reports about the roulette's active house rule. Only the
- * six rules that actually change scoring are accepted here — the flavor-only
- * ones (nothing-happens, forced-petite, the Excuse rule, pass-left) have
- * nothing for the API to do, so the client simply doesn't send them.
+ * What the client reports about the roulette's active house rule. Every rule
+ * is accepted, since the deal records which one it was played under — the
+ * flavor-only ones (nothing-happens, forced-petite, the Excuse rule, the 12,
+ * pass-left) are stored and otherwise leave the scoring alone.
  *
  * Neither the gamble's coin nor the equalizer's ranking are taken from the
  * client: `gamble: true` just means the taker opted in, and both the flip and
@@ -34,7 +26,7 @@ const SCORING_HOUSE_RULE_IDS: readonly ScoringHouseRuleId[] = [
  * a browser console.
  */
 const houseRuleRequestSchema = z.object({
-  id: z.enum(SCORING_HOUSE_RULE_IDS as [ScoringHouseRuleId, ...ScoringHouseRuleId[]]),
+  id: z.enum(HOUSE_RULE_IDS),
   gamble: z.boolean().optional(),
   cheatingCatches: z.record(z.string(), z.number().int().min(0).max(20)).optional(),
 });
@@ -69,6 +61,9 @@ const tableSchema = {
 const createEnculetteSchema = z.object({
   ...tableSchema,
   cardPoints: z.record(z.string(), z.number().int().min(0).max(91)),
+  // Recorded, never applied: with no taker or contract, no house rule changes
+  // how an enculette scores.
+  houseRule: houseRuleRequestSchema.pick({ id: true }).optional(),
 });
 
 const createGameSchema = z.object({
@@ -81,8 +76,7 @@ const createGameSchema = z.object({
   petitAuBout: sideSchema.default("none"),
   poignee: z.enum(["none", "simple", "double", "triple"]).default("none"),
   misere: sideSchema.default("none"),
-  // Absent = play it by the book. Enculette has no taker or contract, so none
-  // of these rules apply there — the schema simply doesn't offer the field.
+  // Absent = no spin, play it by the book (recorded as "nothing-happens").
   houseRule: houseRuleRequestSchema.optional(),
 });
 
@@ -108,6 +102,7 @@ function serializeGame(g: NonNullable<GameWithRelations>) {
     poignee: g.poignee,
     misere: g.misere,
     mode: g.mode,
+    houseRule: g.houseRule,
     baseScore: g.baseScore,
     // An enculette has no attack, so nobody "won" it — hence null rather than
     // a misleading true/false.
@@ -185,6 +180,10 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
 
     const seatMate = seatMates(body.splitWith);
 
+    // No spin is a normal deal, which is all "nothing-happens" means — so the
+    // two are stored alike rather than splitting the stats over a null.
+    const houseRule = body.houseRule?.id ?? "nothing-happens";
+
     // Deals always land in the season that is open right now (rolling it over
     // first if it has come due).
     const season = await currentSeason();
@@ -197,6 +196,7 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
         data: {
           seasonId: season.id,
           mode: "enculette",
+          houseRule,
           numPlayers: body.playerIds.length,
           selfCalled: false, // no taker at all, let alone one playing alone
           createdById: req.authUser!.id,
@@ -269,6 +269,7 @@ export async function gameRoutes(app: FastifyInstance): Promise<void> {
         poignee: body.poignee,
         misere: body.misere,
         mode: "standard",
+        houseRule,
         baseScore: result.baseScore,
         // A guest in either role stores as null; selfCalled still records
         // whether the taker had a partner at all.

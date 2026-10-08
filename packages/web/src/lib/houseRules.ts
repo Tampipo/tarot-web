@@ -1,3 +1,5 @@
+import type { HouseRuleId } from "@tarot/shared";
+
 /** Whatever the wheel needs to know about tonight's table to fill in a name. */
 export interface RouletteContext {
   /** Names of whoever's currently seated, in seat order. */
@@ -14,7 +16,8 @@ export interface RouletteContext {
 }
 
 export interface HouseRule {
-  id: string;
+  /** Saved with the deal, so it has to be an id the API knows. */
+  id: HouseRuleId;
   emoji: string;
   label: string;
   /** Shown as-is unless `resolveDescription` overrides it with live details. */

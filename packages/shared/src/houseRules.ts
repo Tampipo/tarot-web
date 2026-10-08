@@ -1,19 +1,30 @@
 import type { GameInput, GameResult } from "./types";
 
 /**
- * IDs of the roulette's house rules that actually change how a deal scores.
- * The rest (nothing-happens, forced-petite, the Excuse rule, pass-left) are
- * table talk only — nothing here touches them.
+ * Every rule the roulette can land on. A deal records the one it was played
+ * under (Game.houseRule), so this list is also what the API accepts and what
+ * the stats can group by. Only five of them change how a deal scores — see
+ * applyHouseRule. The rest (nothing-happens, forced-petite, the Excuse rule,
+ * the 12, pass-left) are table talk only. "nothing-happens" is also what a
+ * deal played without spinning the wheel is recorded as.
  */
-export type ScoringHouseRuleId =
-  | "double-points"
-  | "big-dog-no-partner"
-  | "taker-gamble"
-  | "cheating-allowed"
-  | "great-equalizer";
+export const HOUSE_RULE_IDS = [
+  "nothing-happens",
+  "forced-petite",
+  "excuse-rule",
+  "twelve-is-twenty-two",
+  "double-points",
+  "taker-gamble",
+  "big-dog-no-partner",
+  "pass-left",
+  "cheating-allowed",
+  "great-equalizer",
+] as const;
+
+export type HouseRuleId = (typeof HOUSE_RULE_IDS)[number];
 
 export interface HouseRuleAdjustment {
-  id: ScoringHouseRuleId;
+  id: HouseRuleId;
   /** "cheating-allowed": tracked player id -> times caught this deal. */
   cheatingCatches?: Record<string, number>;
   /**
@@ -38,7 +49,8 @@ const EQUALIZER_SHARE = 100;
  * Deterministic house-rule adjustments layered on top of an already-scored
  * deal. Shared so the web's live preview and the API's saved result always
  * agree — the one exception is `taker-gamble`, whose coin flip only exists
- * once a caller resolves it into `gambleOutcome` (see above).
+ * once a caller resolves it into `gambleOutcome` (see above). A table-talk
+ * rule has no case below, so the deal comes back scored as it was.
  */
 export function applyHouseRule(
   result: GameResult,

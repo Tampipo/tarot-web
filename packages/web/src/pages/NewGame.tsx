@@ -14,8 +14,8 @@ import {
   type GameInput,
   type GameResult,
   type HouseRuleAdjustment,
+  type HouseRuleId,
   type Poignee,
-  type ScoringHouseRuleId,
   type Side,
 } from "@tarot/shared";
 import { Link } from "react-router-dom";
@@ -97,9 +97,9 @@ function loadStoredTable(): StoredTable | null {
   }
 }
 
-// The house rule a spin landed on for the next deal — flavor only, not read
-// by the scoring engine — cached the same way the table seating is, so it
-// survives navigating away and coming back.
+// The house rule a spin landed on for the next deal — saved with that deal —
+// cached the same way the table seating is, so it survives navigating away
+// and coming back.
 const HOUSE_RULE_STORAGE_KEY = "tarot:newgame-house-rule";
 
 function loadHouseRule(): SpunHouseRule | null {
@@ -116,7 +116,7 @@ function loadHouseRule(): SpunHouseRule | null {
  * opt in?) rather than the actual coin flip, which only the server resolves.
  */
 type HouseRuleRequest = {
-  id: ScoringHouseRuleId;
+  id: HouseRuleId;
   gamble?: boolean;
   cheatingCatches?: Record<string, number>;
 };
@@ -350,18 +350,18 @@ export function NewGame() {
   function buildHouseRulePayload(gamble?: boolean): HouseRuleRequest | undefined {
     const ruleId = activeRule?.id;
     switch (ruleId) {
-      case "double-points":
-      case "big-dog-no-partner":
-      case "great-equalizer":
-        // The equalizer's ranking isn't sent — the API recomputes it from the
-        // DB itself, the same way it resolves the gamble's coin.
-        return { id: ruleId };
+      case undefined:
+        return undefined;
       case "cheating-allowed":
         return { id: ruleId, cheatingCatches: trackedCheatingCatches };
       case "taker-gamble":
         return { id: ruleId, gamble };
       default:
-        return undefined;
+        // Every other rule goes by id alone, table-talk ones included — the
+        // deal records which rule it was played under. The equalizer's ranking
+        // isn't sent: the API recomputes it from the DB itself, the same way
+        // it resolves the gamble's coin.
+        return { id: ruleId };
     }
   }
 
@@ -458,7 +458,13 @@ export function NewGame() {
 
   async function performSave(gamble?: boolean) {
     const payload = encInput
-      ? { mode: "enculette", ...encInput }
+      ? {
+          mode: "enculette",
+          ...encInput,
+          // No house rule changes an enculette's score — only its id is sent,
+          // so the deal still records what the wheel landed on.
+          houseRule: activeRule ? { id: activeRule.id } : undefined,
+        }
       : input
         ? { ...input, houseRule: buildHouseRulePayload(gamble) }
         : null;
