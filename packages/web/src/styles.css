@@ -541,6 +541,54 @@ table.tbl {
   }
 }
 
+/* ---- Links to a player's stats ------------------------------------------ */
+.player-link {
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+.player-link:hover,
+.player-link:focus-visible {
+  color: var(--primary);
+  text-decoration-color: currentColor;
+}
+/* ---- Player search (Stats) ----------------------------------------------- */
+.search {
+  position: relative;
+}
+.search-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+.search-item {
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.94rem;
+}
+.search-item[aria-selected="true"] {
+  background: var(--surface-2);
+  color: var(--primary);
+}
+.search-empty {
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 /* ---- Stat tiles ----------------------------------------------------------- */
 .tiles {
   display: grid;

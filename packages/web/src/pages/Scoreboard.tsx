@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuth } from "../contexts/auth";
 import { Card, Select, Spinner } from "../components/ui";
@@ -8,11 +9,18 @@ import type { ScoreRow, Season } from "../lib/types";
 const rankClass = ["gold", "silver", "bronze"];
 const MEDALS = ["🥇", "🥈", "🥉"];
 
+/** A player's stats, opened on the season being viewed ("" = in progress). */
+function statsUrl(id: string, season: string): string {
+  const params = new URLSearchParams({ player: id });
+  if (season) params.set("season", season);
+  return `/stats?${params}`;
+}
+
 /**
  * Top three, arranged 2nd–1st–3rd with the winner on the tallest riser. Renders
  * whatever it's given, so a two-player table still looks deliberate.
  */
-function Podium({ rows, meId }: { rows: ScoreRow[]; meId?: string }) {
+function Podium({ rows, meId, season }: { rows: ScoreRow[]; meId?: string; season: string }) {
   const top = rows.slice(0, 3).map((row, i) => ({ row, place: i + 1 }));
   // Display order puts 1st in the middle: [2nd, 1st, 3rd].
   const order = [top[1], top[0], top[2]].filter(Boolean);
@@ -22,9 +30,12 @@ function Podium({ rows, meId }: { rows: ScoreRow[]; meId?: string }) {
       {order.map(({ row, place }) => (
         <div className="podium-col" key={row.id}>
           <span className="podium-medal">{MEDALS[place - 1]}</span>
-          <span className={`podium-name ${row.id === meId ? "podium-you" : ""}`.trim()}>
+          <Link
+            to={statsUrl(row.id, season)}
+            className={`podium-name player-link ${row.id === meId ? "podium-you" : ""}`.trim()}
+          >
             {row.name}
-          </span>
+          </Link>
           <span className={`podium-total ${scoreClass(row.total)}`}>{signed(row.total)}</span>
           <div className={`podium-plinth p${place}`}>{place}</div>
         </div>
@@ -87,7 +98,7 @@ export function Scoreboard() {
           <div className="empty">No games recorded for this period.</div>
         ) : (
           <>
-            <Podium rows={rows} meId={user?.id} />
+            <Podium rows={rows} meId={user?.id} season={season} />
             <div style={{ height: 22 }} />
             <div className="table-wrap">
             <table className="tbl">
@@ -109,7 +120,9 @@ export function Scoreboard() {
                       <span className={`rank ${rankClass[i] ?? ""}`.trim()}>{i + 1}</span>
                     </td>
                     <td style={{ fontWeight: 600 }}>
-                      {r.name}
+                      <Link to={statsUrl(r.id, season)} className="player-link">
+                        {r.name}
+                      </Link>
                       {r.id === user?.id && <span className="muted"> (you)</span>}
                     </td>
                     <td className="num">
