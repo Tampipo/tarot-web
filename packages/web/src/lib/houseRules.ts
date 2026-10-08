@@ -26,12 +26,17 @@ export interface HouseRule {
   weight?: number;
   /** Overrides the wheel's default palette for this slice. */
   color?: string;
+  /** Shown as an extra button on the result card — e.g. "Let's go!" to launch a rule's own setup flow. */
+  actionLabel?: string;
   /** Fills in a name the static description can't know ahead of time. */
   resolveDescription?: (ctx: RouletteContext) => string;
 }
 
 /** What actually gets shown and cached once the wheel lands — resolved text, no function to (fail to) serialize. */
-export type SpunHouseRule = Pick<HouseRule, "id" | "emoji" | "label" | "description">;
+export type SpunHouseRule = Pick<
+  HouseRule,
+  "id" | "emoji" | "label" | "description" | "actionLabel"
+>;
 
 /** Best season total to worst, among tonight's tracked seats — ties keep table order. */
 function rankSeatedStandings(standings: RouletteContext["seatedStandings"]): typeof standings {
@@ -41,8 +46,8 @@ function rankSeatedStandings(standings: RouletteContext["seatedStandings"]): typ
 // Flavor rules for the roulette. Landing on one doesn't touch the scoring
 // engine, except where noted. Weights are out of 100, so they read directly as
 // percentages: "Nothing Happens" lands half the time, "Redistribution" is the
-// rare 2%, "Cheating Allowed" is at 8%, and the six remaining rules split the
-// last 40% at 6–7% each.
+// rare 2%, "Cheating Allowed" is at 8%, and the eight remaining rules split
+// the last 40% at 5% each.
 export const HOUSE_RULES: HouseRule[] = [
   {
     id: "nothing-happens",
@@ -56,7 +61,7 @@ export const HOUSE_RULES: HouseRule[] = [
     emoji: "👑",
     label: "Forced Petite",
     description: "The season's leader has to take at least Petite this deal — unless someone already took.",
-    weight: 6,
+    weight: 5,
     resolveDescription: (ctx) =>
       ctx.leaderName
         ? `${ctx.leaderName} has to take at least Petite this deal — unless someone already took.`
@@ -67,21 +72,21 @@ export const HOUSE_RULES: HouseRule[] = [
     emoji: "🃏",
     label: "The Excuse Rule",
     description: "",
-    weight: 6,
+    weight: 5,
   },
   {
     id: "twelve-is-twenty-two",
     emoji: "🔢",
     label: "The 12 is the 22",
     description: "The 12 is the 22.",
-    weight: 6,
+    weight: 5,
   },
   {
     id: "double-points",
     emoji: "2️⃣",
     label: "Double Points",
     description: "This deal's score counts double — for whoever wins it, and whoever doesn't.",
-    weight: 6,
+    weight: 5,
   },
   {
     id: "taker-gamble",
@@ -89,7 +94,7 @@ export const HOUSE_RULES: HouseRule[] = [
     label: "Taker's Gamble",
     description:
       "After scoring, the taker may call a coin flip: heads doubles this deal's result, tails wipes it to zero.",
-    weight: 6,
+    weight: 5,
   },
   {
     id: "big-dog-no-partner",
@@ -106,6 +111,15 @@ export const HOUSE_RULES: HouseRule[] = [
     description:
       "Each player takes one card from the player on their left.",
     weight: 5,
+  },
+  {
+    id: "mystery-taker",
+    emoji: "🎭",
+    label: "Mystery Taker",
+    description:
+      "This deal is Garde Sans, and nobody knows who's taking yet — pass the phone around the table and find out.",
+    weight: 5,
+    actionLabel: "Let's go!",
   },
   {
     id: "cheating-allowed",

@@ -33,6 +33,7 @@ import {
   Spinner,
 } from "../components/ui";
 import { Roulette } from "../components/Roulette";
+import { MysteryTaker } from "../components/MysteryTaker";
 import { scoreClass, signed } from "../lib/format";
 import type { SpunHouseRule } from "../lib/houseRules";
 import type { Player, ScoreRow } from "../lib/types";
@@ -158,6 +159,8 @@ export function NewGame() {
   const [error, setError] = useState<string | null>(null);
 
   const [rouletteOpen, setRouletteOpen] = useState(false);
+  // "Mystery Taker": the phone-passing phase that secretly picks the taker.
+  const [mysteryOpen, setMysteryOpen] = useState(false);
   const [activeRule, setActiveRule] = useState<SpunHouseRule | null>(() => loadHouseRule());
   // Season standings — fetched once, not re-checked live, since they're only
   // read at the moment of a spin or a save. Powers "Forced Petite" (the
@@ -185,6 +188,35 @@ export function NewGame() {
       localStorage.removeItem(HOUSE_RULE_STORAGE_KEY);
     } catch {
       // Nothing to clean up if it was never stored.
+    }
+  }
+
+  // The result card's own "Let's go!" button only exists for mystery-taker
+  // today, but this stays generic — any future rule with an actionLabel would
+  // land here too.
+  function handleRouletteAction(rule: SpunHouseRule) {
+    if (rule.id === "mystery-taker") {
+      setRouletteOpen(false);
+      setMysteryOpen(true);
+    }
+  }
+
+  // The phone round builds the table itself (who's playing varies too much to
+  // assume the seats below are already right), so it hands back the whole
+  // seating, not just the taker. Nobody bit = the table's still set, just no
+  // taker or contract pre-filled — fill the deal in as normal.
+  function handleMysteryDone(outcome: {
+    numPlayers: number;
+    slots: string[];
+    takerId: string | null;
+  }) {
+    setMysteryOpen(false);
+    setEnculette(false);
+    setTableSize(outcome.numPlayers);
+    setSlots(outcome.slots);
+    if (outcome.takerId) {
+      setTakerId(outcome.takerId);
+      setContract("garde_sans");
     }
   }
 
@@ -552,9 +584,20 @@ export function NewGame() {
               {activeRule.emoji} <strong>House rule:</strong> {activeRule.label}
               {activeRule.description && <> — {activeRule.description}</>}
             </span>
-            <Button variant="ghost" className="btn-sm" onClick={clearActiveRule}>
-              Clear
-            </Button>
+            <div className="row" style={{ gap: 8 }}>
+              {activeRule.id === "mystery-taker" && (
+                <Button
+                  variant="default"
+                  className="btn-sm"
+                  onClick={() => setMysteryOpen(true)}
+                >
+                  🎭 Start
+                </Button>
+              )}
+              <Button variant="ghost" className="btn-sm" onClick={clearActiveRule}>
+                Clear
+              </Button>
+            </div>
           </div>
         </Alert>
       )}
@@ -569,7 +612,12 @@ export function NewGame() {
         <Roulette
           context={{ seatedNames: chosen.map(nameOf), leaderName, seatedStandings }}
           onResult={applyRouletteResult}
+          onAction={handleRouletteAction}
         />
+      </Modal>
+
+      <Modal open={mysteryOpen} onClose={() => setMysteryOpen(false)} title="🎭 Mystery Taker">
+        <MysteryTaker players={players} onDone={handleMysteryDone} />
       </Modal>
 
       <Card title="New game" subtitle="Record a deal and split the score.">
