@@ -23,6 +23,11 @@ export interface GameDTO {
    * columns below are null for those deals.
    */
   mode: "standard" | "enculette";
+  /**
+   * Id of the house rule this deal was played under. "nothing-happens" is the
+   * normal deal, whether the roulette landed there or was never spun.
+   */
+  houseRule: string;
   contract: string | null;
   oudlers: number | null;
   pointsMade: number | null;
