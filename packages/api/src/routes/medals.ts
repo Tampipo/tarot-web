@@ -76,6 +76,10 @@ function toDeals(rows: Row[]): MedalDeal[] {
       seatId !== null && (seatId === r.userId || seatId === r.sharesSeatWithId);
     const standard = g.mode !== "enculette";
     const winners = enculettes.get(r.gameId);
+    const margin =
+      standard && g.pointsMade !== null && g.oudlers !== null
+        ? g.pointsMade - TARGET_BY_OUDLERS[g.oudlers]
+        : null;
     return {
       userId: r.userId,
       score: r.score,
@@ -84,12 +88,11 @@ function toDeals(rows: Row[]): MedalDeal[] {
       called: holds(g.partnerId),
       shared: r.sharesSeatWithId !== null,
       contract: g.contract as Contract | null,
-      // Same reading as GET /games: the deal's value to the attack carries its sign.
-      won: g.baseScore === null ? null : g.baseScore >= 0,
-      margin:
-        standard && g.pointsMade !== null && g.oudlers !== null
-          ? g.pointsMade - TARGET_BY_OUDLERS[g.oudlers]
-          : null,
+      // Read off the card points, not the sign of baseScore: a house rule can
+      // rescale a deal's value (the taker's gamble can zero it), but never
+      // whether the contract was made.
+      won: margin === null ? null : margin >= 0,
+      margin,
       enculetteWin: standard || winners == null ? null : winners.has(r.userId),
     };
   });

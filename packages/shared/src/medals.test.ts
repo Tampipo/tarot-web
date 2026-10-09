@@ -160,6 +160,32 @@ describe("seasonMedals — lucky and singe", () => {
   });
 });
 
+describe("seasonMedals — sharing and attendance", () => {
+  /** `n` deals for `userId`, `shared` of them in a shared seat. */
+  const played = (userId: string, n: number, shared = 0) =>
+    Array.from({ length: n }, (_, i) => deal(userId, 0, { shared: i < shared }));
+
+  it("candauliste shares the largest part of their deals", () => {
+    const deals = [...played("a", 10, 6), ...played("b", 10, 2), ...played("c", 5, 0)];
+    expect(medal(deals, "candauliste")).toMatchObject({ holders: ["a"], value: 0.6 });
+  });
+
+  it("ignores anyone under the minimum number of deals for the share", () => {
+    const deals = [...played("a", 4, 4), ...played("b", 10, 1), ...played("c", 10, 3)];
+    expect(medal(deals, "candauliste")?.holders).toEqual(["c"]);
+  });
+
+  it("no candauliste when nobody shared", () => {
+    expect(medal([...played("a", 5), ...played("b", 5)], "candauliste")).toBeUndefined();
+  });
+
+  it("chomeur played the most deals, rip the fewest, enculettes included", () => {
+    const deals = [...played("a", 3), enculette("a", 10, true), ...played("b", 2), ...played("c", 1)];
+    expect(medal(deals, "chomeur")).toMatchObject({ holders: ["a"], value: 4 });
+    expect(medal(deals, "rip")).toMatchObject({ holders: ["c"], value: 1 });
+  });
+});
+
 describe("standingMedals", () => {
   const totals = (...t: [string, number][]) => t.map(([userId, total]) => ({ userId, total }));
 
