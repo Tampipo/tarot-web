@@ -5,8 +5,10 @@ import type { GameInput, GameResult } from "./types";
  * under (Game.houseRule), so this list is also what the API accepts and what
  * the stats can group by. Only five of them change how a deal scores — see
  * applyHouseRule. The rest (nothing-happens, forced-petite, the Excuse rule,
- * the 12, pass-left) are table talk only. "nothing-happens" is also what a
- * deal played without spinning the wheel is recorded as.
+ * the 12, pass-left, mystery-taker) are table talk / client-side-only setup —
+ * mystery-taker just pre-fills the taker and Garde Sans before a normal deal.
+ * "nothing-happens" is also what a deal played without spinning the wheel is
+ * recorded as.
  */
 export const HOUSE_RULE_IDS = [
   "nothing-happens",
@@ -19,6 +21,7 @@ export const HOUSE_RULE_IDS = [
   "pass-left",
   "cheating-allowed",
   "great-equalizer",
+  "mystery-taker",
 ] as const;
 
 export type HouseRuleId = (typeof HOUSE_RULE_IDS)[number];

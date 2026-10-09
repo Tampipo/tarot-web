@@ -67,10 +67,13 @@ export function Roulette({
   rules = HOUSE_RULES,
   context = NO_CONTEXT,
   onResult,
+  onAction,
 }: {
   rules?: HouseRule[];
   context?: RouletteContext;
   onResult?: (rule: SpunHouseRule) => void;
+  /** Fired when the result card's own action button (if the rule has one) is clicked. */
+  onAction?: (rule: SpunHouseRule) => void;
 }) {
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
@@ -130,6 +133,7 @@ export function Roulette({
         emoji: rule.emoji,
         label: rule.label,
         description: rule.resolveDescription ? rule.resolveDescription(context) : rule.description,
+        actionLabel: rule.actionLabel,
       };
       setResult(spun);
       setSpinCount((c) => c + 1);
@@ -208,6 +212,16 @@ export function Roulette({
             <div className="roulette-result-emoji">{result.emoji}</div>
             <div className="roulette-result-label">{result.label}</div>
             <div className="roulette-result-desc muted">{result.description}</div>
+            {result.actionLabel && (
+              <Button
+                variant="primary"
+                block
+                style={{ marginTop: 14 }}
+                onClick={() => onAction?.(result)}
+              >
+                {result.actionLabel}
+              </Button>
+            )}
           </div>
         </div>
       )}
