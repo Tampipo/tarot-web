@@ -47,6 +47,7 @@ export interface MedalDeal {
 export const MIN_CALLS_FOR_BLACK_CAT = 3;
 export const MIN_SPLITS_FOR_HANDICAP = 3;
 export const MIN_DEALS_FOR_GAMBLER = 10;
+export const MIN_DEALS_FOR_SHARE_RATE = 5;
 /** A contract made or failed by this many card points or fewer was a close call. */
 export const BARELY_MARGIN = 2;
 
@@ -62,6 +63,9 @@ export const SEASON_MEDALS = [
   "gambler", //      highest stake per deal: Σ contract multipliers taken ÷ standard deals
   "lucky", //        most contracts made by BARELY_MARGIN or less
   "singe", //        most contracts failed by BARELY_MARGIN or less
+  "candauliste", //  highest share of deals played in a shared seat
+  "chomeur", //      most deals played
+  "rip", //          fewest deals played (among those who played at all)
 ] as const;
 export type StandingMedalId = (typeof STANDING_MEDALS)[number];
 export type SeasonMedalId = (typeof SEASON_MEDALS)[number];
@@ -144,6 +148,7 @@ export function standingMedals(
 /** Every season medal for one season's deals. Medals nobody qualifies for are left out. */
 export function seasonMedals(deals: MedalDeal[]): MedalAward<SeasonMedalId>[] {
   const totals = new Map<string, number>();
+  const games = new Map<string, number>();
   const calls = new Map<string, number>();
   const callsLost = new Map<string, number>();
   const splits = new Map<string, number>();
@@ -159,6 +164,7 @@ export function seasonMedals(deals: MedalDeal[]): MedalAward<SeasonMedalId>[] {
 
   for (const d of deals) {
     bump(totals, d.userId, d.score);
+    bump(games, d.userId);
     if (d.shared) {
       bump(splits, d.userId);
       if (d.score < 0) bump(splitsLost, d.userId);
@@ -190,6 +196,9 @@ export function seasonMedals(deals: MedalDeal[]): MedalAward<SeasonMedalId>[] {
   for (const [id, n] of standardDeals) {
     if (n >= MIN_DEALS_FOR_GAMBLER) gambling.set(id, (stake.get(id) ?? 0) / n);
   }
+  // Share of deals played in a shared seat, for everyone who played enough.
+  const shareRate = rates(splits, games, MIN_DEALS_FOR_SHARE_RATE);
+
   // Every taker is a candidate for the close calls, so one lucky deal among
   // several takers is enough to stand out.
   const withTakers = (m: Map<string, number>) => new Map([...takers].map(([id]) => [id, m.get(id) ?? 0]));
@@ -206,6 +215,9 @@ export function seasonMedals(deals: MedalDeal[]): MedalAward<SeasonMedalId>[] {
     ["gambler", extreme(gambling, "max", positive)],
     ["lucky", extreme(withTakers(barelyWon), "max", positive)],
     ["singe", extreme(withTakers(barelyLost), "max", positive)],
+    ["candauliste", extreme(shareRate, "max", positive)],
+    ["chomeur", extreme(games, "max")],
+    ["rip", extreme(games, "min")],
   ];
   return candidates.flatMap(([id, win]) => (win ? [{ id, ...win }] : []));
 }

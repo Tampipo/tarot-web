@@ -109,6 +109,27 @@ const INFO: Record<
     description: "Was the player with the most barely-lost games last season",
     value: count("close loss"),
   },
+  candauliste: {
+    icon: "🪑",
+    name: "Candauliste",
+    tagline: "Sharing is caring",
+    description: "Shared the most their hand last season",
+    value: (v) => `${pct(v)} shared`,
+  },
+  chomeur: {
+    icon: "🏖️",
+    name: "Chomeur",
+    tagline: "That's a full-time job",
+    description: "Played the most games last season",
+    value: count("game"),
+  },
+  rip: {
+    icon: "👻",
+    name: "RIP",
+    tagline: "Who's that ?",
+    description: "Played the least games last season",
+    value: count("game"),
+  },
   leader: {
     icon: "🥇",
     name: "Leader",
